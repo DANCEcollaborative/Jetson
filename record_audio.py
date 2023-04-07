@@ -76,6 +76,7 @@ def main(args):
                 audio_output_files[i].writeframes(channel_audio)
             if Mic_tuning is not None:
                 dirs_file.write(f'{Mic_tuning.direction}\n')
+                dirs_file.flush()
 
             frames_saved += 1
     except KeyboardInterrupt:
