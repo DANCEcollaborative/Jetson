@@ -52,7 +52,7 @@ def main(args):
                 input_device_index=RESPEAKER_INDEX,)
 
     audio_output_files = []
-    dirs_file = open(os.path.join(audio_dir, "doa.txt"), "a+")
+    dirs_file = open(os.path.join(audio_dir, "doa.txt"), "w+")
     for i in range(RESPEAKER_CHANNELS):
         wf = wave.open(os.path.join(audio_dir, WAVE_OUTPUT_FILE_PREFIX+f"{i}.wav"), 'wb')
         wf.setnchannels(1)
