@@ -51,8 +51,16 @@ def main(args):
                 input=True,
                 input_device_index=RESPEAKER_INDEX,)
 
-    audio_frames = [[] for i in range(RESPEAKER_CHANNELS)]
-    dirs = []
+    audio_output_files = []
+    dirs_file = open(os.path.join(audio_dir, "doa.txt"), "a+")
+    for i in range(RESPEAKER_CHANNELS):
+        wf = wave.open(os.path.join(audio_dir, WAVE_OUTPUT_FILE_PREFIX+f"{i}.wav"), 'ab')
+        wf.setnchannels(1)
+        wf.setsampwidth(p.get_sample_size(p.get_format_from_width(RESPEAKER_WIDTH)))
+        wf.setframerate(RESPEAKER_RATE)
+        audio_output_files.append(wf)
+        # wf.writeframes(b''.join(audio_frames[i]))
+        # wf.close()
 
     # configure camera pipeline
 
@@ -64,9 +72,10 @@ def main(args):
             data = stream.read(CHUNK)
             # extract channel 0 data from 6 channels, if you want to extract channel 1, please change to [1::6]
             for i in range(RESPEAKER_CHANNELS):
-                audio_frames[i].append(np.fromstring(data, dtype=np.int16)[i::RESPEAKER_CHANNELS].tostring())
+                channel_audio = np.fromstring(data, dtype=np.int16)[i::RESPEAKER_CHANNELS].tostring()
+                audio_output_files[i].writeframes(channel_audio)
             if Mic_tuning is not None:
-                dirs.append(Mic_tuning.direction)
+                dirs_file.write(f'{Mic_tuning.direction}\n')
 
             frames_saved += 1
     except KeyboardInterrupt:
@@ -77,17 +86,12 @@ def main(args):
         stream.close()
         p.terminate()
         end = time.time()
-        print([len(f) for f in audio_frames])
         for i in range(RESPEAKER_CHANNELS):
-            wf = wave.open(os.path.join(audio_dir, WAVE_OUTPUT_FILE_PREFIX+f"{i}.wav"), 'wb')
-            wf.setnchannels(1)
-            wf.setsampwidth(p.get_sample_size(p.get_format_from_width(RESPEAKER_WIDTH)))
-            wf.setframerate(RESPEAKER_RATE)
-            wf.writeframes(b''.join(audio_frames[i]))
-            wf.close()
+            audio_output_files[i].close()
 
-        np.save(os.path.join(audio_dir, "doa.npy"), np.array(dirs))
-
+        # np.save(os.path.join(audio_dir, "doa.npy"), np.array(dirs))
+        dirs_file.close()
+        print(f'Closed all open doa file and audio file pointers. Number of chunks recorded = {frames_saved}. Sample rate = {RESPEAKER_RATE}. Num channels saved = {RESPEAKER_CHANNELS}')
         print('Audio duration saved: ', (end-start)) # report frames per second
 
 if __name__ == "__main__":
