@@ -69,7 +69,7 @@ def main(args):
     print('Recording started. Press ("Ctrl+C" ONLY TO STOP RECORDING.)')
     try:
         while True:
-            data = stream.read(CHUNK)
+            data = stream.read(CHUNK, exception_on_overflow=False)
             # extract channel 0 data from 6 channels, if you want to extract channel 1, please change to [1::6]
             for i in range(RESPEAKER_CHANNELS):
                 channel_audio = np.fromstring(data, dtype=np.int16)[i::RESPEAKER_CHANNELS].tostring()
