@@ -54,7 +54,7 @@ def main(args):
     audio_output_files = []
     dirs_file = open(os.path.join(audio_dir, "doa.txt"), "a+")
     for i in range(RESPEAKER_CHANNELS):
-        wf = wave.open(os.path.join(audio_dir, WAVE_OUTPUT_FILE_PREFIX+f"{i}.wav"), 'ab')
+        wf = wave.open(os.path.join(audio_dir, WAVE_OUTPUT_FILE_PREFIX+f"{i}.wav"), 'wb')
         wf.setnchannels(1)
         wf.setsampwidth(p.get_sample_size(p.get_format_from_width(RESPEAKER_WIDTH)))
         wf.setframerate(RESPEAKER_RATE)
