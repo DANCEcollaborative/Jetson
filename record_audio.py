@@ -22,24 +22,9 @@ sys.path = sys.path + required_import_paths
 
 import zmq, datetime, time, json, msgpack
 from datetime import timedelta
+from zmq_utils import *
 
-def generate_current_dotnet_datetime_ticks(base_time = datetime.datetime(1, 1, 1)):
-    return (datetime.datetime.utcnow() - base_time)/datetime.timedelta(microseconds=1) * 1e1
 
-def send_payload(pub_sock, topic, message, originatingTime=None):
-    payload = {}
-    payload[u"message"] = message
-    if originatingTime is None:
-        originatingTime = generate_current_dotnet_datetime_ticks()
-    payload[u"originatingTime"] = originatingTime
-    pub_sock.send_multipart([topic.encode(), msgpack.dumps(payload)])
-    return originatingTime
-
-def create_socket(ip_address='tcp://*:40003'):
-    context = zmq.Context()
-    socket = context.socket(zmq.PUB)
-    socket.bind(ip_address)
-    return socket
 
 
 dev = usb.core.find(idVendor=0x2886, idProduct=0x0018)
@@ -49,17 +34,17 @@ if dev:
 
 def main(args):
 
-    RESPEAKER_RATE = 16000
-    RESPEAKER_CHANNELS = args.num_channels # change base on firmwares, 1_channel_firmware.bin as 1 or 6_channels_firmware.bin as 6
-    RESPEAKER_WIDTH = 2
+    RESPEAKER_RATE = 16000 # sample rate of the audio
+    RESPEAKER_CHANNELS = args.num_channels # change base on firmware, 1_channel_firmware.bin as 1 or 6_channels_firmware.bin as 6
+    RESPEAKER_WIDTH = 2 # bytes, 1 byte = 8 bits, how many bytes to use to represent audio level for each sample
     # run getDeviceInfo.py to get index
     RESPEAKER_INDEX = get_respeaker_index()  # refer to input device id
-    CHUNK = 1024
+    CHUNK = 1024 # number of samples recorded at each poll of micrphone
     WAVE_OUTPUT_FILE_PREFIX = "output_channel_"
 
-    socket = create_socket(ip_address='tcp://*:40001')
-    socket2 = create_socket(ip_address='tcp://*:40002')
-    socket3 = create_socket(ip_address='tcp://*:40003')
+    socket = create_socket(ip_address='tcp://*:40001') # channel to send audio
+    socket2 = create_socket(ip_address='tcp://*:40002') # channel to send DOA
+    socket3 = create_socket(ip_address='tcp://*:40003') # channel to send VAD
 
     start_date_time = datetime.datetime.now().strftime('%m-%d-%y_%H:%M:%S')
     audio_dir = os.path.join(args.outdir, "audio", start_date_time)
@@ -76,7 +61,9 @@ def main(args):
                 input_device_index=RESPEAKER_INDEX,)
 
     audio_output_files = []
-    dirs_file = open(os.path.join(audio_dir, "doa.txt"), "w+")
+    dirs_file = open(os.path.join(audio_dir, "doa.txt"), "w+") # txt file t store every polled DOA value
+
+    # to configure and create the wave file objects to write to for each of the 6 channels,  not recording audio at this stage, 
     for i in range(RESPEAKER_CHANNELS):
         wf = wave.open(os.path.join(audio_dir, WAVE_OUTPUT_FILE_PREFIX+f"{i}.wav"), 'wb')
         wf.setnchannels(1)
@@ -93,23 +80,28 @@ def main(args):
     print('Recording started. Press ("Ctrl+C" ONLY TO STOP RECORDING.)')
     try:
         while True:
-            data = stream.read(CHUNK, exception_on_overflow=False)
+            data = stream.read(CHUNK, exception_on_overflow=False) # if TRUE, the audio recording could stop automatically if the audio data exceeds system buffer capacity
+
             # extract channel 0 data from 6 channels, if you want to extract channel 1, please change to [1::6]
+            # data = [0, 1, 2, 3, 4, 5, 0a, 1a, 2a, 3a, 4a, 5a, 0b, 1b, 2b, 3b, 4b, 5b, ....] where 0, 0a, 0b, 0c,.. represent subsequent audio samples from the 0th channel, and similarly for each of the 6 channels
+
             originatingTime = None
             for i in range(RESPEAKER_CHANNELS):
-                channel_audio = np.fromstring(data, dtype=np.int16)[i::RESPEAKER_CHANNELS].tostring()
+                channel_audio = np.fromstring(data, dtype=np.int16)[i::RESPEAKER_CHANNELS].tostring() 
                 # np tostring() is an alias for np tobytes(); it returns bytes as opposed to str as implied by the function name
                 audio_output_files[i].writeframes(channel_audio)
                 if i==0:
+                    # only sending audio from channel 0 to PSI
                     originatingTime = send_payload(socket, "temp", channel_audio)
                     print(f"Channel 0 audio sent at {originatingTime}", len(channel_audio))
                     
             if Mic_tuning is not None:
                 dirn = Mic_tuning.direction
-                vad = Mic_tuning.is_voice()
+                vad = Mic_tuning.is_speech
+                # explicitly setting the originatingTime for the payloads so that PSI receives and perceives the audio, DOA and VAD to be recorded at the same time. 
                 originatingTime2 = send_payload(socket2, "temp2", dirn, originatingTime)
                 originatingTime3 = send_payload(socket3, "temp3", vad, originatingTime2)
-                print(f"DOA {dirn} - VAD {vad} | sent at {originatingTime3}", originatingTime==originatingTime3)
+                print(f"DOA {dirn} - VAD {vad} | sent at {originatingTime2}", originatingTime==originatingTime2)
                 dirs_file.write(f'DIR - {dir}; VAD - {vad};\n')
                 dirs_file.flush()
 
