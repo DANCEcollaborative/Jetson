@@ -138,7 +138,7 @@ try:
 
         for person in msg:
             if person['raise_hand']:
-                curr_pose = 'raise hand'
+                curr_pose = 'raisehand'
             else:
                 curr_pose = ''
             
@@ -157,7 +157,7 @@ try:
         for person in msg:
             person_id = person['id']
             pose = mode(history[person_id])[0][0]
-            if pose == 'raise hand':
+            if pose == 'raisehand':
                 loc = msg[person_id]['look']
                 break
 
