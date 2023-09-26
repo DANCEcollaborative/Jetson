@@ -3,7 +3,6 @@ ZeroMQ utility functions
 """
 
 import zmq, datetime, msgpack, time, json
-from requests import get
 
 def generate_current_dotnet_datetime_ticks(base_time = datetime.datetime(1, 1, 1)):
     return (datetime.datetime.utcnow() - base_time)/datetime.timedelta(microseconds=1) * 1e1
