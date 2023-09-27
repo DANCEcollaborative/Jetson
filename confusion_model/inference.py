@@ -144,7 +144,6 @@ class ConfusionInference(ConfusionInferenceBase):
         # Return extracted faces
         return torch.stack([extract_face(image, box) for box in boxes])
 
-    @timer_func
     def extract_cnn_feats(
             self, images: Union[Image, List[Image]], threshold: float = 0.95
     ):
@@ -167,6 +166,14 @@ class ConfusionInference(ConfusionInferenceBase):
             else:
                 return None
         return cnn_feats.cpu()
+
+    @timer_func
+    def add_image(self, image: Image):
+        cnn_feats = self.extract_cnn_feats(image)
+        self.feats.append(cnn_feats)
+
+    def is_ready(self) -> bool:
+        return len(self.feats) == self.window_len
 
     @timer_func
     def run_inference(
@@ -199,34 +206,42 @@ class ConfusionInference(ConfusionInferenceBase):
                 preds = torch.sigmoid(logits)
                 print(preds)
                 preds = torch.gt(preds, threshold)
-
+        self.feats.pop(0)
         return preds
 
 
 if __name__ == "__main__":
     # extract_images_from_vid("data/videos/confusion_subset/giphy.mp4")
     # Inference check
+    model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
     inference_model = ConfusionInference(
-        load_model_path="./data/FCN_CNN_512_3.bin",
+        #load_model_path="./data/FCN_CNN_512_3.bin",
+        load_model_path=model_path,
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cpu",
         haar_path=None
     )
-    dirlist = os.listdir("data/full_images")
-    buffer = [img.open(os.path.join("data/full_images", img_file)) for img_file in dirlist]
+    file_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
+    dirlist = os.listdir(file_path)
+    print(f"Number of images in buffer: {len(dirlist)}")
+    buffer = [img.open(os.path.join(file_path, img_file)) for img_file in dirlist]
     buffer = deque(buffer)
+    num_preds = 0
     window_len = inference_model.window_len
+    start = time()
     while buffer:
         curr_image = buffer.popleft()
         h, w = curr_image.size
         curr_image = curr_image.resize((3 * h // 4,  3 * w // 4))
         print(curr_image.size)
-        feat_tensor = inference_model.extract_cnn_feats(curr_image)
-        if feat_tensor is not None:
-            inference_model.feats.append(feat_tensor)
-        if len(inference_model.feats) == window_len:
+        # Pseudo
+        inference_model.add_image(curr_image)
+        if inference_model.is_ready():
             preds = inference_model.run_inference()
             print(preds)
-            inference_model.feats.pop(0)
+            num_preds += 1
+    print(f"Total number of predictions {num_preds}")
+    print(f"Total inference time: {time() - start}")
+
