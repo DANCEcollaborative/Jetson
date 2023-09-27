@@ -33,7 +33,10 @@ colors = np.squeeze(cv.applyColorMap(colors, cv.COLORMAP_VIRIDIS))
 limit = 10
 
 try:
+    prev_payload = {'location': '', 'pose': ''}
     history = {}
+
+    hand_raise_count = 0
     while True:
         depth, img = camera.get_frame_stream()
         height = img.shape[0]
@@ -64,9 +67,9 @@ try:
             # Where to look
             look = None
             if kp.x < width/3:
-                look = 'left'
-            elif kp.x > 2 *(width/3):
                 look = 'right'
+            elif kp.x > 2 *(width/3):
+                look = 'left'
             else: look = 'front'
 
             # Raise Hand
@@ -114,37 +117,15 @@ try:
                 cv.ellipse(img, (int(kp1.x), int(kp1.y)), (10,10), 0, 0, 360, kp1_color, -1)
                 cv.ellipse(img, (int(kp2.x), int(kp2.y)), (10,10), 0, 0, 360, kp2_color, -1)
 
-
-        # curr_text = 'front'
-        # for person in msg:
-        #     if person['raise_hand'] == True:
-        #         curr_text = person['look']
-
-        # if len(history) < limit:
-        #     history.append(curr_text)
-        # else:
-        #     history.pop(0)
-        #     history.append(curr_text)
-
-        # curr_majority = mode(history)[0][0]
-        # if majority != curr_majority: 
-        #     majority = curr_majority
-        #     print("sent payload")
-        #     print('majority:', majority)
-        #     send_payload(socket, 'Remote_PSI_Text', majority)
-        #     time.sleep(0.01)
-
-        # reply = socket.recv()
-
-        for person in msg:
+        for person_id, person in enumerate(msg):
             if person['raise_hand']:
-                curr_pose = 'raisehand'
+                curr_pose = 'handraise'
             else:
                 curr_pose = ''
             
-            person_id = person['id']
+            # person_id = person['id']
         
-            if person_id not in history:
+            if person_id >= len(history):
                 history[person_id] = [curr_pose]
             elif len(history[person_id]) < limit:
                 history[person_id].append(curr_pose)
@@ -154,30 +135,37 @@ try:
         
         pose = ''
         loc = ''
-        for person in msg:
-            person_id = person['id']
-            pose = mode(history[person_id])[0][0]
-            if pose == 'raisehand':
-                loc = msg[person_id]['look']
-                break
+        for person_id, person in enumerate(msg):
+            # person_id = person['id']
+
+            if person_id < len(history) :
+                pose = mode(history[person_id])[0][0]
+                if pose == 'handraise':
+                    loc = msg[person_id]['look']
+                    break
 
         payload = {'location': loc, 'pose': pose}
-        send_payload(socket, 'Remote_PSI_Text', payload)
-        time.sleep(0.01)
+        if pose == 'handraise' and (prev_payload['location'] != payload['location']) and hand_raise_count == 0:
+            print('sent payload: {payload}')
+            send_payload(socket, 'Remote_PSI_Text', payload)
+            hand_raise_count += 1
+            time.sleep(0.01)
 
-        cv.putText(img, f"{payload}", (5, 25), 0, 0.8, (255, 255, 255), 2)
+        if hand_raise_count == 75:
+            hand_raise_count = 0
+        elif hand_raise_count != 0:
+            hand_raise_count += 1
+
+        prev_payload = payload
+        cv.putText(img, f"{payload} hand raise counter: {hand_raise_count}", (5, 25), 0, 0.8, (1, 1, 1), 2)
         
         cv.imshow('demo', img)
 
-        # print('msg:', msg)
-        # print('msg length', len(msg))
-
+        # if press esc, quit program
         key = cv.waitKey(1)
         if key == 27:
             break
 
-
-        # time.sleep(0.4)
         
 finally:
     print("Finishing up!")

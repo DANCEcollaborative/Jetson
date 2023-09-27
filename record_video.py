@@ -13,6 +13,10 @@ sys.path = sys.path + required_import_paths
 
 import pyrealsense2 as rs
 
+def nava_infer(frame):
+    emb= np.random.rand(1, 512)
+    tensor_list = emb.tolist()
+    return tensor_list
 
 def main(args):
 
@@ -61,10 +65,16 @@ def main(args):
             depth_img = np.asanyarray(aligned_depth_frame.get_data(), dtype=float)
             color_img = np.asanyarray(color_frame.get_data())
 
+
+            #send color_img to PSI
+            # socket = create_socket(ip_address='tcp://*:40001') # channel to send images
+            # emb_tensor_list = nava_infer(color_img)
+            # send_payload(tensor_socket, "temp_tensor", emb_tensor_list)
+
             # save recording frames
             cv2.imwrite(os.path.join(img_dir, f'{frames_saved}.png'), cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB))
             cv2.imwrite(os.path.join(depth_dir, f'{frames_saved}.png'), depth_img)
-
+            
             frames_saved += 1
 
             # if frames_saved == 4500:

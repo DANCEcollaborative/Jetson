@@ -128,12 +128,20 @@ def send_IPs_to_PSI ():
     print("Connecting to server...")
     socket.connect("tcp://128.2.204.249:40001")   # bree
     time.sleep(1)
-
-    request = json.dumps({"sensorVideoText":"tcp://128.2.220.118:40003", "sensorAudio": "tcp://128.2.212.138:40001", "sensorDOA": "tcp://128.2.212.138:40002", "sensorVAD": "tcp://128.2.212.138:40003"})   # erebor"
+    
     # request = "tcp://128.2.149.108:40003"
     # request = "tcp://23.227.148.141:40003"
     # "sensorVideoText":"tcp://128.2.212.138:40000" -- Nano
     # "sensorVideoText":"tcp://128.2.220.118:40003" -- erebor
+
+    # video from erebor
+    # request = json.dumps({"sensorVideoText":"tcp://128.2.220.118:40003", "sensorAudio": "tcp://128.2.212.138:40001", "sensorDOA": "tcp://128.2.212.138:40002", "sensorVAD": "tcp://128.2.212.138:40003"})  
+
+    # video at Concordia U.
+    # request = json.dumps({"sensorVideoText":"tcp://132.204.219.133:40000", "sensorAudio": "tcp://132.204.219.133:40001", "sensorDOA": "tcp://132.204.219.133:40002", "sensorVAD": "tcp://132.204.219.133:40003"})
+
+    # video from Nano 
+    request = json.dumps({"sensorVideoText":"tcp://128.2.212.138:40000", "sensorAudio": "tcp://128.2.212.138:40001", "sensorDOA": "tcp://128.2.212.138:40002", "sensorVAD": "tcp://128.2.212.138:40003"})
 
     # Send the request
     payload = {}

@@ -15,7 +15,7 @@ camera = RealSenseCamera()
 
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
-socket.bind('tcp://*:40003')
+socket.bind('tcp://*:40000')
 
 def generate_current_dotnet_datetime_ticks(base_time = datetime.datetime(1, 1, 1)):
     return (datetime.datetime.utcnow() - base_time)/datetime.timedelta(microseconds=1) * 1e1
@@ -113,8 +113,7 @@ try:
                 # draw keypoints
                 cv.ellipse(img, (int(kp1.x), int(kp1.y)), (10,10), 0, 0, 360, kp1_color, -1)
                 cv.ellipse(img, (int(kp2.x), int(kp2.y)), (10,10), 0, 0, 360, kp2_color, -1)
-
-
+        inference.add_predict()
         curr_text = 'front'
         for person in msg:
             if person['raise_hand'] == True:
