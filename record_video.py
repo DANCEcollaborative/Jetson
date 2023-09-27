@@ -8,22 +8,26 @@ import numpy as np
 from datetime import datetime
 
 import sys
-required_import_paths = ["~/", "/usr/local/lib/python3.6/pyrealsense2", "~/.local/lib/python3.6/site-packages"]
+
+required_import_paths = [
+    "~/",
+    "/usr/local/lib/python3.6/pyrealsense2",
+    "~/.local/lib/python3.6/site-packages",
+]
 sys.path = sys.path + required_import_paths
 
 import pyrealsense2 as rs
 
 
 def main(args):
-
-    # make dirs 
+    # make dirs
     out_path = os.path.join(args.outdir, args.outfile)
 
     if os.path.exists(out_path):
         shutil.rmtree(out_path)
-    
-    depth_dir = os.path.join(out_path, 'depth')
-    img_dir = os.path.join(out_path, 'img')
+
+    depth_dir = os.path.join(out_path, "depth")
+    img_dir = os.path.join(out_path, "img")
     os.makedirs(depth_dir)
     os.makedirs(img_dir)
 
@@ -46,7 +50,7 @@ def main(args):
 
     start = time.time()
     frames_saved = 0
-    print('Recording')
+    print("Recording")
     try:
         while True:
             frames = pipeline.wait_for_frames()
@@ -62,8 +66,11 @@ def main(args):
             color_img = np.asanyarray(color_frame.get_data())
 
             # save recording frames
-            cv2.imwrite(os.path.join(img_dir, f'{frames_saved}.png'), cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB))
-            cv2.imwrite(os.path.join(depth_dir, f'{frames_saved}.png'), depth_img)
+            cv2.imwrite(
+                os.path.join(img_dir, f"{frames_saved}.png"),
+                cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB),
+            )
+            cv2.imwrite(os.path.join(depth_dir, f"{frames_saved}.png"), depth_img)
 
             frames_saved += 1
 
@@ -71,31 +78,45 @@ def main(args):
             #     print('Stopping recoding at 5 minutes')
             #     break
 
-            # visualize images if visualize flag on 
+            # visualize images if visualize flag on
             if args.visualize:
-                depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_img, alpha=0.03), cv2.COLORMAP_JET)
+                depth_colormap = cv2.applyColorMap(
+                    cv2.convertScaleAbs(depth_img, alpha=0.03), cv2.COLORMAP_JET
+                )
 
                 images = np.hstack((color_img, depth_colormap))
 
-                cv2.namedWindow('Visualization')
-                cv2.imshow('Visualization', images)
+                cv2.namedWindow("Visualization")
+                cv2.imshow("Visualization", images)
 
                 key = cv2.waitKey(1)
 
-                if key & 0xFF == ord('q') or key == 27:
+                if key & 0xFF == ord("q") or key == 27:
                     cv2.destroyAllWindows()
                     break
     finally:
-        print('Stopping Recording')
+        print("Stopping Recording")
         end = time.time()
 
-        print(frames_saved/(end-start)) # report frames per second
+        print(frames_saved / (end - start))  # report frames per second
         pipeline.stop()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--outdir', default='./output/', help='Name of output directory, must be created before running')
-    parser.add_argument('--outfile', default='video', help='Name of video folder for output')
-    parser.add_argument('--visualize', action='store_true', default=False, help='visualize frames while recording, cannot do in headless mode')
+    parser.add_argument(
+        "--outdir",
+        default="./output/",
+        help="Name of output directory, must be created before running",
+    )
+    parser.add_argument(
+        "--outfile", default="video", help="Name of video folder for output"
+    )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        default=False,
+        help="visualize frames while recording, cannot do in headless mode",
+    )
     args = parser.parse_args()
     main(args)
