@@ -223,6 +223,8 @@ class ConfusionInference(ConfusionInferenceBase):
 
         with torch.no_grad():
             features = self.extract_cnn_feats(images)
+            if features is None: 
+                return None
             features = features.reshape(-1, self.input_sz)
             logits = self.model(features)
             if self.multiclass:
@@ -239,7 +241,7 @@ class ConfusionInference(ConfusionInferenceBase):
 if __name__ == "__main__":
     # Inference check
     model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
-    model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    # model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
     torch.cuda.empty_cache()
     gc.collect()
     inference_model = ConfusionInference(
