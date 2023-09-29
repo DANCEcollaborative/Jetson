@@ -28,7 +28,7 @@ sys.path = sys.path + required_import_paths
 import zmq, datetime, time, json, msgpack
 from datetime import timedelta
 from zmq_utils import *
-
+from config immport *
 
 dev = usb.core.find(idVendor=0x2886, idProduct=0x0018)
 Mic_tuning = None
@@ -47,9 +47,9 @@ def main(args):
     CHUNK = 1024  # number of samples recorded at each poll of micrphone
     WAVE_OUTPUT_FILE_PREFIX = "output_channel_"
 
-    socket = create_socket(ip_address="tcp://*:40001")  # channel to send audio
-    socket2 = create_socket(ip_address="tcp://*:40002")  # channel to send DOA
-    socket3 = create_socket(ip_address="tcp://*:40003")  # channel to send VAD
+    socket = create_socket(ip_address=f"tcp://*:{audio_port}")  # channel to send audio
+    socket2 = create_socket(ip_address=f"tcp://*:{doa_port}")  # channel to send DOA
+    socket3 = create_socket(ip_address=f"tcp://*:{vad_port}")  # channel to send VAD
 
     start_date_time = datetime.datetime.now().strftime("%m-%d-%y_%H:%M:%S")
     audio_dir = os.path.join(args.outdir, "audio", start_date_time)

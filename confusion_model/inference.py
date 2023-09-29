@@ -1,12 +1,15 @@
 import os
+import gc
 from typing import List, Union
 from collections import deque
 
 import cv2
 from PIL.Image import Image
 import PIL.Image as img
+from torch.profiler import profile, record_function, ProfilerActivity
 
 import torch
+from torch.cuda.amp import autocast
 from facenet_pytorch import InceptionResnetV1
 from facenet_pytorch.models.utils.detect_face import extract_face
 
@@ -50,7 +53,7 @@ class ConfusionInferenceBase:
         # Load model and put on device
         self.model = torch.load(self.load_model_path)
         self.model.eval()
-        self.model.to("cpu")
+        self.model.to(device)
         self.data_type = data_type
         self.device = device
 
@@ -93,9 +96,16 @@ class ConfusionInference(ConfusionInferenceBase):
                 self.face_extractor = cv2.CascadeClassifier(haar_path)
 
             # Load in CNN model and put on Cuda Device
-            self.cnn = InceptionResnetV1(
-                pretrained=FACE_EMBEDDING_MODEL, classify=False
-            ).to(device)
+            start_mem, total_mem  = torch.cuda.mem_get_info()
+            print(f"Cuda usage before loading model {start_mem}")
+            print(f"Cuda total mem: {total_mem}")
+            with autocast(): 
+                self.cnn = InceptionResnetV1(
+                    pretrained=FACE_EMBEDDING_MODEL, classify=False, 
+                    device=self.device)    
+            end_mem, total_mem  = torch.cuda.mem_get_info()
+            print(f"Cuda total mem: {total_mem}")
+            print(f"Cuda usage before loading model {end_mem}")
             self.cnn.eval()
 
         # Type of Loaded Prediction Model was trained to perform
@@ -159,18 +169,31 @@ class ConfusionInference(ConfusionInferenceBase):
             tensor = self._face_extraction_harr(images)
             if tensor is not None:
 
-                start = time()
+                
                 # Run through feature extractor
-                cnn_feats = self.cnn(tensor.reshape(-1, 3, 160, 160).to(self.device))
-                print(f"CNN executed in {time() - start} s")
+                start_mem, total_mem  = torch.cuda.mem_get_info()
+                print(f"Cuda usage before loading tensor {start_mem}")
+                with autocast(): 
+                    start_time = time()
+                    reshaped = tensor.reshape(-1, 3, 160, 160)
+                    print(f"Time to reshape: {time() - start_time}")
+                    start_time = time()
+                    cuda_tensor = reshaped.to(self.device)
+                    print(f"Time to put on tensor: {time() - start_time}")
+                    end_mem, total_mem = torch.cuda.mem_get_info()
+                    print(f"Cuda usage after loading {end_mem}")
+                    start = time()
+                    cnn_feats = self.cnn(tensor.reshape(-1, 3, 160, 160).to(self.device))
+                    print(f"CNN executed in {time() - start} s")
             else:
                 return None
-        return cnn_feats.cpu()
+        return cnn_feats
 
     @timer_func
     def add_image(self, image: Image):
         cnn_feats = self.extract_cnn_feats(image)
-        self.feats.append(cnn_feats)
+        if cnn_feats is not None: 
+            self.feats.append(cnn_feats)
 
     def is_ready(self) -> bool:
         return len(self.feats) == self.window_len
@@ -211,19 +234,19 @@ class ConfusionInference(ConfusionInferenceBase):
 
 
 if __name__ == "__main__":
-    # extract_images_from_vid("data/videos/confusion_subset/giphy.mp4")
     # Inference check
-    model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    torch.cuda.empty_cache()
+    gc.collect()
     inference_model = ConfusionInference(
-        #load_model_path="./data/FCN_CNN_512_3.bin",
         load_model_path=model_path,
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
-        device="cpu",
-        haar_path=None
+        device="cuda",
+        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml"
     )
-    file_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
+    file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
     buffer = [img.open(os.path.join(file_path, img_file)) for img_file in dirlist]
