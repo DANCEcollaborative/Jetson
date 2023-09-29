@@ -31,6 +31,7 @@ class ConfusionInferenceBase:
             data_type: str = "window",
             label_dict: dict = EMOTION_NO,
             device: str = "cpu",
+            verbose: bool = "False"
     ):
         """
         Initialize trained model for inference
@@ -56,7 +57,7 @@ class ConfusionInferenceBase:
         self.model.to(device)
         self.data_type = data_type
         self.device = device
-
+        self.verbose = verbose
         if data_type == "window":
             self.input_sz *= self.window_len
 
@@ -90,23 +91,25 @@ class ConfusionInference(ConfusionInferenceBase):
             # Currently hard-coding Haar cascade Hyperparams
             if self.device == "cuda":
                 self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
-                self.face_extractor.setMinNeighbors(7)
-                self.face_extractor.setMinObjectSize((10,10))
+                self.face_extractor.setMinNeighbors(5)
+                self.face_extractor.setMinObjectSize((10, 10))
             else:
                 self.face_extractor = cv2.CascadeClassifier(haar_path)
 
             # Load in CNN model and put on Cuda Device
-            start_mem, total_mem  = torch.cuda.mem_get_info()
-            print(f"Cuda usage before loading model {start_mem}")
-            print(f"Cuda total mem: {total_mem}")
-            with autocast(): 
+            if self.verbose:
+                start_mem, total_mem = torch.cuda.mem_get_info()
+                print(f"Cuda usage before loading model {start_mem}")
+                print(f"Cuda total mem: {total_mem}")
+            with autocast():
                 self.cnn = InceptionResnetV1(
-                    pretrained=FACE_EMBEDDING_MODEL, classify=False, 
-                    device=self.device)    
-            end_mem, total_mem  = torch.cuda.mem_get_info()
-            print(f"Cuda total mem: {total_mem}")
-            print(f"Cuda usage before loading model {end_mem}")
-            self.cnn.eval()
+                        pretrained=FACE_EMBEDDING_MODEL, classify=False,
+                        device=self.device)
+                if self.verbose:
+                    end_mem, total_mem = torch.cuda.mem_get_info()
+                    print(f"Cuda total mem: {total_mem}")
+                    print(f"Cuda usage before loading model {end_mem}")
+                self.cnn.eval()
 
         # Type of Loaded Prediction Model was trained to perform
         self.multiclass = multiclass
@@ -135,7 +138,7 @@ class ConfusionInference(ConfusionInferenceBase):
         else:
             # CPU code has same logic but with different API and I/O
             boxes = self.face_extractor.detectMultiScale(
-            gray_img, scaleFactor=1.1, minNeighbors=7, minSize=(10, 10))
+                gray_img, scaleFactor=1.1, minNeighbors=5, minSize=(10, 10))
         if len(boxes) == 0:
             return None
         # If results are returned, change boxes from (x, y, h, w) to
@@ -166,33 +169,41 @@ class ConfusionInference(ConfusionInferenceBase):
 
         with torch.no_grad():
             # Get Embedded Face Images
-            tensor = self._face_extraction_harr(images)
-            if tensor is not None:
-
-                
+            tensor_list = [self._face_extraction_harr(image) for image in images if image is not None]
+            if len(tensor_list) != self.window_len:
+                return None
+            try:
+                full_tensor = torch.stack(tensor_list, dim=1)
+            except RuntimeError:
+                tensor_list = [torch.mean(tensor, dim=0) for tensor in tensor_list]
+                full_tensor = torch.stack(tensor_list, dim=1)
+            if full_tensor is not None:
                 # Run through feature extractor
-                start_mem, total_mem  = torch.cuda.mem_get_info()
-                print(f"Cuda usage before loading tensor {start_mem}")
-                with autocast(): 
+                if self.verbose:
+                    start_mem, total_mem = torch.cuda.mem_get_info()
+                    print(f"Cuda usage before loading tensor {start_mem}")
+                with autocast():
                     start_time = time()
-                    reshaped = tensor.reshape(-1, 3, 160, 160)
-                    print(f"Time to reshape: {time() - start_time}")
+                    reshaped = full_tensor.reshape(-1, 3, 160, 160)
+                    if self.verbose:
+                        print(f"Time to reshape: {time() - start_time}")
                     start_time = time()
                     cuda_tensor = reshaped.to(self.device)
-                    print(f"Time to put on tensor: {time() - start_time}")
-                    end_mem, total_mem = torch.cuda.mem_get_info()
-                    print(f"Cuda usage after loading {end_mem}")
+                    if self.verbose:
+                        print(f"Time to put on tensor: {time() - start_time}")
+                        end_mem, total_mem = torch.cuda.mem_get_info()
+                        print(f"Cuda usage after loading {end_mem}")
                     start = time()
-                    cnn_feats = self.cnn(tensor.reshape(-1, 3, 160, 160).to(self.device))
+                    cnn_feats = self.cnn(cuda_tensor)
+                if self.verbose:
                     print(f"CNN executed in {time() - start} s")
             else:
                 return None
         return cnn_feats
 
-    @timer_func
     def add_image(self, image: Image):
         cnn_feats = self.extract_cnn_feats(image)
-        if cnn_feats is not None: 
+        if cnn_feats is not None:
             self.feats.append(cnn_feats)
 
     def is_ready(self) -> bool:
@@ -201,24 +212,17 @@ class ConfusionInference(ConfusionInferenceBase):
     @timer_func
     def run_inference(
             self,
+            images: List[Image],
             output_format: str = "ix",
             threshold: Union[float, List[float]] = 0.6,
     ) -> Union[int, str, List[int], List[str]]:
         # Type check
 
-        if self.data_type == "window":
-            try:
-                # If each frame in the window has the same amount of extracted
-                # faces, then stack them into 1 tensor
-                features = torch.stack(self.feats, dim=1)
-            except RuntimeError:
-                # Otherwise take average over faces
-                features = torch.stack([torch.mean(feat, dim=0) for feat in self.feats], dim=1)
-        else:
-            # If not windowed, then use last frame available
-            features = self.feats[-1]
+        if self.data_type == "window" and len(images) != self.window_len:
+            raise ValueError(f"Number of Images needs to be {self.window_len}")
 
         with torch.no_grad():
+            features = self.extract_cnn_feats(images)
             features = features.reshape(-1, self.input_sz)
             logits = self.model(features)
             if self.multiclass:
@@ -229,13 +233,13 @@ class ConfusionInference(ConfusionInferenceBase):
                 preds = torch.sigmoid(logits)
                 print(preds)
                 preds = torch.gt(preds, threshold)
-        self.feats.pop(0)
         return preds
 
 
 if __name__ == "__main__":
     # Inference check
     model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
     torch.cuda.empty_cache()
     gc.collect()
     inference_model = ConfusionInference(
@@ -244,9 +248,12 @@ if __name__ == "__main__":
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cuda",
-        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml"
+        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
+        # device="cpu",
+        # haar_path=None
     )
     file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
+    # file_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
     buffer = [img.open(os.path.join(file_path, img_file)) for img_file in dirlist]
@@ -255,16 +262,15 @@ if __name__ == "__main__":
     window_len = inference_model.window_len
     start = time()
     while buffer:
-        curr_image = buffer.popleft()
-        h, w = curr_image.size
-        curr_image = curr_image.resize((3 * h // 4,  3 * w // 4))
-        print(curr_image.size)
+        images = []
+        image_1 = buffer.popleft()
+        h, w = image_1.size
+        image_1 = image_1.resize((3 * h // 4, 3 * w // 4))
+        images.append(image_1)
+        images.append(buffer.popleft().resize((3 * h // 4, 3 * w // 4)))
+        images.append(buffer.popleft().resize((3 * h // 4, 3 * w // 4)))
         # Pseudo
-        inference_model.add_image(curr_image)
-        if inference_model.is_ready():
-            preds = inference_model.run_inference()
-            print(preds)
-            num_preds += 1
+        inference_model.run_inference(images)
+        num_preds += 1
     print(f"Total number of predictions {num_preds}")
     print(f"Total inference time: {time() - start}")
-
