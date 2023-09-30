@@ -13,8 +13,8 @@ from torch.cuda.amp import autocast
 from facenet_pytorch import InceptionResnetV1
 from facenet_pytorch.models.utils.detect_face import extract_face
 
-from data_utils import convert_from_image_to_cv2, timer_func
-from constants import FACE_EMBEDDING_MODEL, EMOTION_NO
+from confusion_model.data_utils import convert_from_image_to_cv2, timer_func
+from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
 from time import time
 
 
@@ -234,7 +234,7 @@ class ConfusionInference(ConfusionInferenceBase):
             else:
                 preds = torch.sigmoid(logits)
                 print(preds)
-                preds = torch.gt(preds, threshold)
+                # preds = torch.gt(preds, threshold)
         return preds
 
 
