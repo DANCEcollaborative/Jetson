@@ -1,3 +1,12 @@
+import sys
+
+required_import_paths = [
+    "~/",
+    "/usr/local/lib/python3.6/pyrealsense2",
+    "~/.local/lib/python3.6/site-packages",
+]
+sys.path = sys.path + required_import_paths
+
 # Jetson
 jetson_ip = "128.2.212.138"
 remoteIp_port = 60000

@@ -1,14 +1,15 @@
 import cv2 as cv
-from video_scripts.camera import RealSenseCamera
 import threading
 import time
 from collections import deque
 import sys
-from confusion_model.inference import ConfusionInference
 from config import *
 from zmq_utils import *
+from confusion_model.inference import ConfusionInference
+from video_scripts.camera import RealSenseCamera
 
-camera = RealSenseCamera()
+
+camera = RealSenseCamera(res=(640, 480))
 
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
@@ -21,12 +22,12 @@ buffer_lock = threading.Lock()
 
 def confusion_cnn_embed():
     inference_model = ConfusionInference(
-        load_model_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin",
+        load_model_path="/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin",
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cuda",
-        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml"
+        haar_path="/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml"
     )
     window_len = inference_model.window_len
     num_preds = 0
