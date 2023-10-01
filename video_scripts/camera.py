@@ -1,4 +1,4 @@
-from video_config import *
+from video_scripts.video_config import *
 import pyrealsense2 as rs
 import numpy as np
 

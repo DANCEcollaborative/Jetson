@@ -6,17 +6,18 @@ from typing import List, Union
 from collections import deque
 
 import cv2
+import numpy as np
 from PIL.Image import Image
 import PIL.Image as img
 from torch.profiler import profile, record_function, ProfilerActivity
 
 import torch
 from torch.cuda.amp import autocast
-from facenet_pytorch import InceptionResnetV1
+from facenet_pytorch import InceptionResnetV1, MTCNN
 from facenet_pytorch.models.utils.detect_face import extract_face
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from data_utils import convert_from_image_to_cv2, timer_func
-from constants import FACE_EMBEDDING_MODEL, EMOTION_NO
+from confusion_model.data_utils import convert_from_image_to_cv2, timer_func
+from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
 from time import time
 
 
@@ -93,10 +94,11 @@ class ConfusionInference(ConfusionInferenceBase):
 
             # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
             # Currently hard-coding Haar cascade Hyperparams
-            if self.cv2_device == "cuda":
-                self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
-                self.face_extractor.setMinNeighbors(5)
-                self.face_extractor.setMinObjectSize((10, 10))
+            if self.device == "cuda":
+                # self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
+                # self.face_extractor.setMinNeighbors(5)
+                # self.face_extractor.setMinObjectSize((10, 10))
+                self.face_extractor = MTCNN(device=self.device, keep_all=True)
             else:
                 self.face_extractor = cv2.CascadeClassifier(haar_path)
 
@@ -119,6 +121,35 @@ class ConfusionInference(ConfusionInferenceBase):
         self.multiclass = multiclass
         # Buffer of features
         self.feats = []
+
+    
+    def _stable_facial_extraction(self, image: Image, threshold: float = 0.80):
+        """
+        Code for MTCNN based facial extraction. Currently not supported due to
+        computational constraints
+        :param image: PIL Image of Frame
+        :param threshold: Confidence Prob Threshold of MTCNN to include
+        :return: Tensor of Size [Num Faces x 3 x 160 x 160]
+        """
+        start = time()
+        boxes, probs = self.face_extractor.detect(image)
+        print(probs, flush=True)
+        print(f"MTCNN executed in {time() - start} s")
+        if boxes is not None:
+            print(boxes.shape, flush="True")
+            boxes = np.array(
+                [box for box, prob in zip(boxes, probs) if prob > threshold],
+                dtype=np.float32,
+            )
+            
+            if boxes.shape[0] == 0: 
+                return None 
+            boxes = boxes[boxes[:, 0].argsort()]
+            print(boxes.shape, flush="True")
+        else: 
+            print("No faces detected")
+            return None
+        return self.face_extractor.extract(image, boxes, save_path=None)
 
     @timer_func
     def _face_extraction_harr(self, image: Image):
@@ -173,14 +204,19 @@ class ConfusionInference(ConfusionInferenceBase):
 
         with torch.no_grad():
             # Get Embedded Face Images
-            tensor_list = [self._face_extraction_harr(image) for image in images if image is not None]
+            tensor_list = [self._stable_facial_extraction(image) for image in images if image is not None]
             if len(tensor_list) != self.window_len:
                 return None
             try:
                 full_tensor = torch.stack(tensor_list, dim=1)
+                print(full_tensor.shape, flush=True)
             except RuntimeError:
+                print("HERE!", flush=True)
                 tensor_list = [torch.mean(tensor, dim=0) for tensor in tensor_list]
                 full_tensor = torch.stack(tensor_list, dim=1)
+            except TypeError:
+                print("Face not detected in these frames!")
+                full_tensor = None 
             if full_tensor is not None:
                 # Run through feature extractor
                 if self.verbose:

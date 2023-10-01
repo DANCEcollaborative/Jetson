@@ -2,20 +2,21 @@ import cv2 as cv
 import threading
 import time
 from collections import deque
-import sys
+import numpy as np
 from config import *
 from zmq_utils import *
 from confusion_model.inference import ConfusionInference
-from video_scripts.camera import RealSenseCamera
 from confusion_model.constants import *
 from PIL import Image
 import base64
+import cv2
 
-camera = RealSenseCamera(res=(640, 480))
 
-context = zmq.Context()
-socket = context.socket(zmq.PUB)
-socket.bind(f"tcp://*:{images_port}")
+# context = zmq.Context()
+# socket = context.socket(zmq.SUB)
+# socket.bind('tcp://*:60004')
+sub_socket_to_psi = create_sub_socket('tcp://localhost:40004')
+sub_socket_to_psi.setsockopt_string(zmq.SUBSCRIBE, "images-psi-to-python")
 
 # Initialize global buffer
 BUF_MAX_LEN = 6
@@ -24,12 +25,12 @@ buffer_lock = threading.Lock()
 
 def confusion_cnn_embed():
     inference_model = ConfusionInference(
-        load_model_path="/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin",
+        load_model_path="/usr0/home/nvaikunt/FCN_CNN_512_3.bin",
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cuda",
-        haar_path="/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt.xml"
+        haar_path=None
     )
     window_len = inference_model.window_len
     num_preds = 0
@@ -41,8 +42,7 @@ def confusion_cnn_embed():
                 buffer_outputs = [buffer.popleft() for _ in range(window_len)]
 
             current_images = []
-            for bo in buffer_outputs:
-                img = Image.fromarray(bo[0])
+            for img, _ in buffer_outputs:
                 h, w = img.size
                 print("hello", h, w)
                 curr_image = img.resize((3 * h // 4,  3 * w // 4))
@@ -50,7 +50,6 @@ def confusion_cnn_embed():
                 current_images.append(curr_image)
             
             preds = inference_model.run_inference(current_images)
-            payload = preds #ToDo: Convert "preds" type to something that send_payload expects
             print(preds)
             num_preds += 1
             # feat_tensor = inference_model.extract_cnn_feats(curr_image)
@@ -69,35 +68,20 @@ def confusion_cnn_embed():
 
 def capture_frames():
     try:
-        history = {}
         while True:
-            depth, img = camera.get_frame_stream()
-            height = img.shape[0]
-            width = img.shape[1]
-
+            frame, originatingTime = readFrame(sub_socket_to_psi)
+            img = base64.b64decode(frame)
+            npimg = np.fromstring(img, dtype=np.uint8)
+            img = Image.fromarray(cv2.imdecode(npimg, 1))
             # if frame_count % 10 == 0:  # Add every 10th frame to buffer
             with buffer_lock:
-                buffer.append((img, generate_current_dotnet_datetime_ticks()))  # Appending image and current time as tuple to buffer
-
-            time.sleep(0.01)
-
-            # cv.imshow("demo", img)
-
-            # print('msg:', msg)
-            # print('msg length', len(msg))
-            _, img_buffer = cv.imencode('.jpg', img)
-            payload = base64.b64encode(img_buffer)
-            send_payload(socket, "images", payload)
-            key = cv.waitKey(1)
-            if key == 27:
-                break
+                buffer.append((img, originatingTime))  # Appending image and current time as tuple to buffer
 
             # time.sleep(0.4)
 
     finally:
         print("Finishing up!")
 
-        camera.stop_stream()
 
 def main():
     capture_thread = threading.Thread(target=capture_frames, daemon=True)

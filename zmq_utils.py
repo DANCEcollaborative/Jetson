@@ -28,3 +28,17 @@ def create_socket(ip_address="tcp://*:40003"):
     socket = context.socket(zmq.PUB)
     socket.bind(ip_address)
     return socket
+
+# ZMQ UTILS
+def create_sub_socket(ip_address:str=''):
+    context = zmq.Context()
+    socket = context.socket(zmq.SUB)
+    socket.connect(ip_address)
+    return socket
+
+def readFrame(socket):
+    [topic, payload] = socket.recv_multipart()
+    message = msgpack.unpackb(payload, raw=True)
+    frame = message[b"message"]
+    originatingTime = message[b"originatingTime"]
+    return (frame, originatingTime)
