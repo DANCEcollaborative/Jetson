@@ -1,5 +1,7 @@
 import os
 import gc
+import sys
+from pathlib import Path
 from typing import List, Union
 from collections import deque
 
@@ -12,9 +14,9 @@ import torch
 from torch.cuda.amp import autocast
 from facenet_pytorch import InceptionResnetV1
 from facenet_pytorch.models.utils.detect_face import extract_face
-
-from confusion_model.data_utils import convert_from_image_to_cv2, timer_func
-from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from data_utils import convert_from_image_to_cv2, timer_func
+from constants import FACE_EMBEDDING_MODEL, EMOTION_NO
 from time import time
 
 
@@ -74,6 +76,7 @@ class ConfusionInference(ConfusionInferenceBase):
             data_type: str = "window",
             label_dict: dict = EMOTION_NO,
             device: str = "cpu",
+            cv2_device: str = "cpu", 
             multiclass: bool = False,
             haar_path: str = None,
     ):
@@ -82,6 +85,7 @@ class ConfusionInference(ConfusionInferenceBase):
         If needed load CNN featurizer models for embedding
         """
         self.feat_type = load_model_path.split("/")[-1].split(".")[0].split("_")[-3]
+        self.cv2_device = cv2_device
         if self.feat_type == "CNN":
             # Default extraction, only works on newer cv2 releases
             if haar_path is None:
@@ -89,7 +93,7 @@ class ConfusionInference(ConfusionInferenceBase):
 
             # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
             # Currently hard-coding Haar cascade Hyperparams
-            if self.device == "cuda":
+            if self.cv2_device == "cuda":
                 self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
                 self.face_extractor.setMinNeighbors(5)
                 self.face_extractor.setMinObjectSize((10, 10))
@@ -127,7 +131,7 @@ class ConfusionInference(ConfusionInferenceBase):
         # Take PIL image and turn it into CV2 image
         col_img, gray_img = convert_from_image_to_cv2(image, new_area=None)
         # If GPU, need to turn from numpy array to GPU Matrix and back
-        if self.device == "cuda":
+        if self.cv2_device == "cuda":
             cuFrame = cv2.cuda_GpuMat(gray_img)
             boxes = self.face_extractor.detectMultiScale(cuFrame).download()
             # Given we return anything, then unpack the value
@@ -240,7 +244,8 @@ class ConfusionInference(ConfusionInferenceBase):
 
 if __name__ == "__main__":
     # Inference check
-    model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    print(sys.path)
+    model_path = "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
     # model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
     torch.cuda.empty_cache()
     gc.collect()
@@ -250,11 +255,11 @@ if __name__ == "__main__":
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cuda",
-        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
+        # haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
         # device="cpu",
-        # haar_path=None
+        haar_path=None
     )
-    file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
+    file_path = "/usr0/home/nvaikunt/full_images"
     # file_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
