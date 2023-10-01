@@ -17,7 +17,7 @@ def main():
             "doa": f"tcp://{jetson_ip}:{doa_port}",
             "vad": f"tcp://{jetson_ip}:{vad_port}",
             "cvPreds": f"tcp://{jetson_ip}:{confusion_classifier_res_port}",
-
+            "images": f"tcp://{jetson_ip}:{images_port}",
         }
     )  # erebor"
     # request = json.dumps({"sensorVideoText":"tcp://128.2.212.138:40000", "sensorAudio": "tcp://128.2.212.138:40001", "sensorDOA": "tcp://128.2.212.138:40002", "sensorVAD": "tcp://128.2.212.138:40003"})   # erebor"

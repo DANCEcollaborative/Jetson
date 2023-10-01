@@ -31,7 +31,7 @@ class ConfusionInferenceBase:
             data_type: str = "window",
             label_dict: dict = EMOTION_NO,
             device: str = "cpu",
-            verbose: bool = "False"
+            verbose: bool = False
     ):
         """
         Initialize trained model for inference
@@ -74,6 +74,7 @@ class ConfusionInference(ConfusionInferenceBase):
             data_type: str = "window",
             label_dict: dict = EMOTION_NO,
             device: str = "cpu",
+            cv2_device: str = "cpu",
             multiclass: bool = False,
             haar_path: str = None,
     ):
@@ -82,6 +83,7 @@ class ConfusionInference(ConfusionInferenceBase):
         If needed load CNN featurizer models for embedding
         """
         self.feat_type = load_model_path.split("/")[-1].split(".")[0].split("_")[-3]
+        self.cv2_device = cv2_device
         if self.feat_type == "CNN":
             # Default extraction, only works on newer cv2 releases
             if haar_path is None:
@@ -89,7 +91,7 @@ class ConfusionInference(ConfusionInferenceBase):
 
             # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
             # Currently hard-coding Haar cascade Hyperparams
-            if self.device == "cuda":
+            if self.cv2_device == "cuda":
                 self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
                 self.face_extractor.setMinNeighbors(5)
                 self.face_extractor.setMinObjectSize((10, 10))
@@ -127,7 +129,7 @@ class ConfusionInference(ConfusionInferenceBase):
         # Take PIL image and turn it into CV2 image
         col_img, gray_img = convert_from_image_to_cv2(image, new_area=None)
         # If GPU, need to turn from numpy array to GPU Matrix and back
-        if self.device == "cuda":
+        if self.cv2_device == "cuda":
             cuFrame = cv2.cuda_GpuMat(gray_img)
             boxes = self.face_extractor.detectMultiScale(cuFrame).download()
             # Given we return anything, then unpack the value
@@ -250,7 +252,7 @@ if __name__ == "__main__":
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cuda",
-        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
+        haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt.xml",
         # device="cpu",
         # haar_path=None
     )

@@ -13,6 +13,7 @@ remoteIp_port = 60000
 audio_port = 60001
 doa_port = 60002
 vad_port = 60003
+images_port = 60004
 
 confusion_classifier_res_port = 61001
 
