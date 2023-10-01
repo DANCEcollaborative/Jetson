@@ -33,7 +33,7 @@ class ConfusionInferenceBase:
             data_type: str = "window",
             label_dict: dict = EMOTION_NO,
             device: str = "cpu",
-            verbose: bool = "False"
+            verbose: bool = False
     ):
         """
         Initialize trained model for inference
