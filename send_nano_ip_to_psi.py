@@ -1,6 +1,7 @@
 import zmq, datetime, time, json
 from config import *
 
+
 def main():
     context = zmq.Context()
     socket = context.socket(zmq.REQ)

@@ -2,7 +2,7 @@ import cv2
 from PIL.Image import Image
 import PIL.Image as img
 import numpy as np
-from typing import Tuple
+from typing import Tuple, List
 from time import time
 
 
@@ -32,3 +32,16 @@ def timer_func(func):
         return result
 
     return wrap_func
+
+
+def get_closest_ix(coordinate: float, coordinate_list: List[float]) -> int:
+    """
+    Given a coordinate associated with a face object, find the index of the closest
+    face in a list of other coordinates
+    :param coordinate: coordinate (any coordinate) of faces
+    :param coordinate_list: List of all coordinates of faces
+    :return: index of closest face to given face coordinate
+    """
+    return np.argmin(
+        [abs(coordinate - new_coordinate) for new_coordinate in coordinate_list]
+    )
