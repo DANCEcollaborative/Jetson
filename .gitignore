@@ -162,6 +162,7 @@ cython_debug/
 #.idea/
 *.mp4
 *pat.txt
+data/
 jetson_venv/lib64
 jetson_venv/pyvenv.cfg
 jetson_venv/bin/activate
