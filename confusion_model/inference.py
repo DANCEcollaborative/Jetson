@@ -332,10 +332,10 @@ class ConfusionInference(ConfusionInferenceBase):
 
 if __name__ == "__main__":
     # Inference check
-    # model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
-    model_path = (
-        "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
-    )
+    model_path = "/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    # model_path = (
+    #    "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    #)
     # print(sys.path)
     # model_path = "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
     torch.cuda.empty_cache()
@@ -345,16 +345,14 @@ if __name__ == "__main__":
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
-        # device="cuda",
-        # haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
-        device="cpu",
-        haar_path=None,
-        extractor="stable"
+        device="cuda",
+        haar_path="/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
+        extractor="fast"
     )
     # file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
     # file_path = "/usr0/home/nvaikunt/full_images"
     file_path = (
-        "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
+        "/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/full_images"
     )
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
