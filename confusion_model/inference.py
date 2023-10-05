@@ -18,6 +18,7 @@ from facenet_pytorch.models.utils.detect_face import extract_face
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from confusion_model.data_utils import convert_from_image_to_cv2, timer_func, get_closest_ix
 from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
+from confusion_model.tensorrt_conversion import load_model
 from time import time
 
 
@@ -80,7 +81,8 @@ class ConfusionInference(ConfusionInferenceBase):
         multiclass: bool = False,
         haar_path: str = None,
         extractor: str = "fast",
-        cv2_device: str = "cpu"
+        cv2_device: str = "cpu", 
+        tensor_rt: bool = False
     ):
         super().__init__(load_model_path, data_type, label_dict, device)
         """
@@ -89,28 +91,32 @@ class ConfusionInference(ConfusionInferenceBase):
         self.feat_type = load_model_path.split("/")[-1].split(".")[0].split("_")[-3]
         self.cv2_device = cv2_device
         self.extractor = extractor
-        if self.feat_type == "CNN":
-            # Default extraction, only works on newer cv2 releases
-            if haar_path is None:
-                haar_path = cv2.data.haarcascades + "haarcascade_frontalface_alt.xml"
+        self.tensor_rt = tensor_rt
+        
+        # Default extraction, only works on newer cv2 releases
+        if haar_path is None:
+            haar_path = cv2.data.haarcascades + "haarcascade_frontalface_alt.xml"
 
-            if self.extractor == "fast":
-                # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
-                # Currently hard-coding Haar cascade Hyperparams
-                if self.cv2_device == "cuda":
-                    self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
-                    self.face_extractor.setMinNeighbors(5)
-                    self.face_extractor.setMinObjectSize((10, 10))
-                else:
-                    self.face_extractor = cv2.CascadeClassifier(haar_path)
+        if self.extractor == "fast":
+            # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
+            # Currently hard-coding Haar cascade Hyperparams
+            if self.cv2_device == "cuda":
+                self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
+                self.face_extractor.setMinNeighbors(5)
+                self.face_extractor.setMinObjectSize((10, 10))
             else:
-                self.face_extractor = MTCNN(device=self.device, keep_all=True)
-
-            # Load in CNN model and put on Cuda Device
-            if self.verbose:
-                start_mem, total_mem = torch.cuda.mem_get_info()
-                print(f"Cuda usage before loading model {start_mem}")
-                print(f"Cuda total mem: {total_mem}")
+                self.face_extractor = cv2.CascadeClassifier(haar_path)
+        else:
+            self.face_extractor = MTCNN(device=self.device, keep_all=True)
+        
+        # Load in CNN model and put on Cuda Device
+        if self.verbose:
+            start_mem, total_mem = torch.cuda.mem_get_info()
+            print(f"Cuda usage before loading model {start_mem}")
+            print(f"Cuda total mem: {total_mem}")
+        if self.tensor_rt: 
+            self.cnn = load_model("./data/Inception_Net_TRT_Window.pth")
+        else: 
             with autocast():
                 self.cnn = InceptionResnetV1(
                     pretrained=FACE_EMBEDDING_MODEL, classify=False, device=self.device
@@ -119,7 +125,7 @@ class ConfusionInference(ConfusionInferenceBase):
                     end_mem, total_mem = torch.cuda.mem_get_info()
                     print(f"Cuda total mem: {total_mem}")
                     print(f"Cuda usage before loading model {end_mem}")
-                self.cnn.eval()
+        self.cnn.eval()
 
         # Type of Loaded Prediction Model was trained to perform
         self.multiclass = multiclass
@@ -262,6 +268,8 @@ class ConfusionInference(ConfusionInferenceBase):
             tensor_list = self.collate_frames(images)
             if len(tensor_list) != self.window_len:
                 return None
+            #TODO: Only Batch at the window level, change 287 to loop through faces 
+            # -> this will allow us to use fixed batch size 
             try:
                 full_tensor = torch.stack(tensor_list, dim=1)
             except RuntimeError:
@@ -276,18 +284,11 @@ class ConfusionInference(ConfusionInferenceBase):
                     start_mem, total_mem = torch.cuda.mem_get_info()
                     print(f"Cuda usage before loading tensor {start_mem}")
                 with autocast():
-                    start_time = time()
-                    reshaped = full_tensor.reshape(-1, 3, 160, 160)
-                    if self.verbose:
-                        print(f"Time to reshape: {time() - start_time}")
-                    start_time = time()
-                    cuda_tensor = reshaped.to(self.device)
-                    if self.verbose:
-                        print(f"Time to put on tensor: {time() - start_time}")
-                        end_mem, total_mem = torch.cuda.mem_get_info()
-                        print(f"Cuda usage after loading {end_mem}")
                     start = time()
-                    cnn_feats = self.cnn(cuda_tensor)
+                    if self.tensor_rt:
+                        full_tensor = full_tensor.half()
+                    cnn_feats = torch.stack([self.cnn(tensor.to(self.device)) for tensor in full_tensor], dim=0)
+                    print(f"CNN executed in {time() - start} s")
                 if self.verbose:
                     print(f"CNN executed in {time() - start} s")
             else:
@@ -319,6 +320,8 @@ class ConfusionInference(ConfusionInferenceBase):
             if features is None: 
                 return torch.tensor([0.0] * 5)
             features = features.reshape(-1, self.input_sz)
+            if self.tensor_rt: 
+                self.model = self.model.half()
             logits = self.model(features)
             if self.multiclass:
                 preds = torch.argmax(logits, dim=-1)
@@ -348,7 +351,8 @@ if __name__ == "__main__":
         # haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
         device="cuda",
         haar_path=None,
-        extractor="stable"
+        extractor="stable", 
+        tensor_rt = False
     )
     # file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
     file_path = "/usr0/home/nvaikunt/full_images"
