@@ -101,13 +101,13 @@ def capture_frames():
 
 def main():
     capture_thread = threading.Thread(target=capture_frames, daemon=True)
-    inference_thread = threading.Thread(target=confusion_cnn_embed, daemon=True)
+    # inference_thread = threading.Thread(target=confusion_cnn_embed, daemon=True)
 
     capture_thread.start()
-    inference_thread.start()
+    # inference_thread.start()
 
     capture_thread.join()
-    inference_thread.join()
+    # inference_thread.join()
 
 
 if __name__ == "__main__":

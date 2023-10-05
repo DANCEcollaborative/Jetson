@@ -28,7 +28,7 @@ sys.path = sys.path + required_import_paths
 import zmq, datetime, time, json, msgpack
 from datetime import timedelta
 from zmq_utils import *
-from config immport *
+from config import *
 
 dev = usb.core.find(idVendor=0x2886, idProduct=0x0018)
 Mic_tuning = None
