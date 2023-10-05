@@ -74,6 +74,7 @@ def capture_frames():
             depth, img = camera.get_frame_stream()
             height = img.shape[0]
             width = img.shape[1]
+            print(height, width)
 
             # if frame_count % 10 == 0:  # Add every 10th frame to buffer
             with buffer_lock:
