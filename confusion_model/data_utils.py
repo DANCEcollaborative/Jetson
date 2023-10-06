@@ -45,3 +45,4 @@ def get_closest_ix(coordinate: float, coordinate_list: List[float]) -> int:
     return np.argmin(
         [abs(coordinate - new_coordinate) for new_coordinate in coordinate_list]
     )
+    
