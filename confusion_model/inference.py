@@ -200,7 +200,9 @@ class ConfusionInference(ConfusionInferenceBase):
         else:
             # frame_list = [self._stable_facial_extraction(image) for image in images if image is not None]
             frame_list = [self._yolo_extraction(image) for image in images if image is not None]
-
+        for frame in frame_list:
+            if frame is None: 
+                return []
         max_len, max_vector, max_ix = len(frame_list[0]), frame_list[0], 0
         need_match = False
         for i in range(1, len(frame_list)):
@@ -358,7 +360,7 @@ class ConfusionInference(ConfusionInferenceBase):
 
         with torch.no_grad():
             features = self.extract_cnn_feats(images)
-            if features is None: 
+            if features is None:
                 return torch.tensor([0.0] * 5)
             features = features.reshape(-1, self.input_sz)
             if self.tensor_rt: 

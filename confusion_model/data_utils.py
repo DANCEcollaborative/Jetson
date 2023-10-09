@@ -74,6 +74,8 @@ def create_yolo_tensor(orig_image: Image, model_resolution: Tuple, model_dtype="
 def post_process_yolo_preds(preds: list, orig_image: Image, model_resolution: Tuple = (640, 640)) -> np.ndarray:
         photo = orig_image
         preds  = non_max_suppression_face(preds[0])[0]
+        if preds.shape[0] == 0: 
+            return preds
         preds = [pred.cpu()[:4] for pred in preds]
         preds = scale_box(model_resolution, torch.stack(preds, dim=0), (photo.height, photo.width)).round()
         return preds.numpy()
