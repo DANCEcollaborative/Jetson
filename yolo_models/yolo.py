@@ -43,6 +43,7 @@ class Detect(nn.Module):
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
 
     def forward(self, x):
+   
         # x = x.copy()  # for profiling
         z = []  # inference output
         if self.export_cat:
@@ -50,10 +51,13 @@ class Detect(nn.Module):
                 x[i] = self.m[i](x[i])  # conv
                 bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
                 x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
-
+            
                 if self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     # self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
                     self.grid[i], self.anchor_grid[i] = self._make_grid_new(nx, ny,i)
+                    if x[i].dtype == torch.float16:
+                        self.grid[i] = self.grid[i].half()
+                        self.anchor_grid[i] = self.anchor_grid[i].half()
 
                 y = torch.full_like(x[i], 0)
                 y = y + torch.cat((x[i][:, :, :, :, 0:5].sigmoid(), torch.cat((x[i][:, :, :, :, 5:15], x[i][:, :, :, :, 15:15+self.nc].sigmoid()), 4)), 4)
@@ -78,10 +82,13 @@ class Detect(nn.Module):
             x[i] = self.m[i](x[i])  # conv
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
-
+          
             if not self.training:  # inference
+                
                 if self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
+                    if x[i].dtype == torch.float16:
+                        self.grid[i] = self.grid[i].half() 
 
                 y = torch.full_like(x[i], 0)
                 class_range = list(range(5)) + list(range(15,15+self.nc))
@@ -89,10 +96,13 @@ class Detect(nn.Module):
                 y[..., 5:15] = x[i][..., 5:15]
                 #y = x[i].sigmoid()
 
+               
                 y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i].to(x[i].device)) * self.stride[i]  # xy
                 y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
 
                 #y[..., 5:15] = y[..., 5:15] * 8 - 4
+
+
                 y[..., 5:7]   = y[..., 5:7] *   self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i] # landmark x1 y1
                 y[..., 7:9]   = y[..., 7:9] *   self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i]# landmark x2 y2
                 y[..., 9:11]  = y[..., 9:11] *  self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i]# landmark x3 y3
@@ -124,7 +134,7 @@ class Detect(nn.Module):
         anchor_grid = (self.anchors[i].clone() * self.stride[i]).view((1, self.na, 1, 1, 2)).expand((1, self.na, ny, nx, 2)).float()
         return grid, anchor_grid
 class Model(nn.Module):
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, dtype=torch.float32, device="cuda"):  # model, input channels, number of classes
         super(Model, self).__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -142,12 +152,16 @@ class Model(nn.Module):
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
         # print([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
-
+        # self.model.to(device=device)
+        if dtype == torch.float16: 
+            self.model.half()
         # Build strides, anchors
         m = self.model[-1]  # Detect()
         if isinstance(m, Detect):
             s = 128  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            # m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros((1, ch, s, s), dtype=dtype).to(device))], dtype=dtype)  # forward
+            # m.anchors /= m.stride.view(-1, 1, 1).to(device)
+            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros((1, ch, s, s)))]) 
             m.anchors /= m.stride.view(-1, 1, 1)
             check_anchor_order(m)
             self.stride = m.stride
