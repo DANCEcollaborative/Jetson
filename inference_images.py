@@ -35,7 +35,9 @@ def confusion_cnn_embed():
         multiclass=False,
         label_dict=EMOTION_NO,
         device="cuda",
-        haar_path=None
+        haar_path=None,
+        extractor="stable",
+        tensor_rt = True
     )
     window_len = inference_model.window_len
     num_preds = 0
