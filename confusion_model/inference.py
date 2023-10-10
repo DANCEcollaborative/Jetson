@@ -264,7 +264,7 @@ class ConfusionInference(ConfusionInferenceBase):
         with torch.no_grad():
             features = self.extract_cnn_feats(images)
             if features is None: 
-                return None
+                return torch.tensor([0.0] * 5)
             features = features.reshape(-1, self.input_sz)
             logits = self.model(features)
             if self.multiclass:

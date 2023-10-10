@@ -1,3 +1,6 @@
+"""
+Done: Accept images (thread), get predictions (thread). Env /usr0/home/sohamdit/Jetson/jetson_venv
+"""
 import cv2 as cv
 import threading
 import time
@@ -17,6 +20,8 @@ import cv2
 # socket.bind('tcp://*:60004')
 sub_socket_to_psi = create_sub_socket('tcp://localhost:40004')
 sub_socket_to_psi.setsockopt_string(zmq.SUBSCRIBE, "images-psi-to-python")
+
+pub_socket_to_psi = create_socket(ip_address=f"tcp://*:{confusion_classifier_res_port}")
 
 # Initialize global buffer
 BUF_MAX_LEN = 6
@@ -50,7 +55,8 @@ def confusion_cnn_embed():
                 current_images.append(curr_image)
             
             preds = inference_model.run_inference(current_images)
-            print(preds)
+            ot = send_payload(pub_socket_to_psi, "cv-preds", np.array(preds.reshape(-1,).tolist()).tobytes())
+            print(f"hello there: {ot}", preds.reshape(-1,).shape, preds.reshape(-1,).tolist())
             num_preds += 1
             # feat_tensor = inference_model.extract_cnn_feats(curr_image)
             # if feat_tensor is not None:
@@ -66,7 +72,7 @@ def confusion_cnn_embed():
     print(f"Total number of predictions {num_preds}")
     print(f"Total inference time: {time.time() - start}")
 
-def capture_frames():
+def read_frames():
     try:
         while True:
             frame, originatingTime = readFrame(sub_socket_to_psi)
@@ -84,7 +90,7 @@ def capture_frames():
 
 
 def main():
-    capture_thread = threading.Thread(target=capture_frames, daemon=True)
+    capture_thread = threading.Thread(target=read_frames, daemon=True)
     inference_thread = threading.Thread(target=confusion_cnn_embed, daemon=True)
 
     capture_thread.start()
