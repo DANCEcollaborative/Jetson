@@ -2,7 +2,7 @@ import os
 import gc
 import sys
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Tuple
 from collections import deque
 
 import cv2
@@ -16,7 +16,7 @@ from torch.cuda.amp import autocast
 from facenet_pytorch import InceptionResnetV1, MTCNN
 from facenet_pytorch.models.utils.detect_face import extract_face
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from confusion_model.data_utils import convert_from_image_to_cv2, timer_func
+from confusion_model.data_utils import convert_from_image_to_cv2, timer_func, get_closest_ix
 from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
 from time import time
 
@@ -29,12 +29,12 @@ class ConfusionInferenceBase:
     """
 
     def __init__(
-            self,
-            load_model_path: str,
-            data_type: str = "window",
-            label_dict: dict = EMOTION_NO,
-            device: str = "cpu",
-            verbose: bool = False
+        self,
+        load_model_path: str,
+        data_type: str = "window",
+        label_dict: dict = EMOTION_NO,
+        device: str = "cpu",
+        verbose: bool = False,
     ):
         """
         Initialize trained model for inference
@@ -72,14 +72,15 @@ class ConfusionInference(ConfusionInferenceBase):
     """
 
     def __init__(
-            self,
-            load_model_path: str,
-            data_type: str = "window",
-            label_dict: dict = EMOTION_NO,
-            device: str = "cpu",
-            cv2_device: str = "cpu", 
-            multiclass: bool = False,
-            haar_path: str = None,
+        self,
+        load_model_path: str,
+        data_type: str = "window",
+        label_dict: dict = EMOTION_NO,
+        device: str = "cpu",
+        multiclass: bool = False,
+        haar_path: str = None,
+        extractor: str = "fast",
+        cv2_device: str = "cpu"
     ):
         super().__init__(load_model_path, data_type, label_dict, device)
         """
@@ -87,20 +88,23 @@ class ConfusionInference(ConfusionInferenceBase):
         """
         self.feat_type = load_model_path.split("/")[-1].split(".")[0].split("_")[-3]
         self.cv2_device = cv2_device
+        self.extractor = extractor
         if self.feat_type == "CNN":
             # Default extraction, only works on newer cv2 releases
             if haar_path is None:
                 haar_path = cv2.data.haarcascades + "haarcascade_frontalface_alt.xml"
 
-            # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
-            # Currently hard-coding Haar cascade Hyperparams
-            if self.device == "cuda":
-                # self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
-                # self.face_extractor.setMinNeighbors(5)
-                # self.face_extractor.setMinObjectSize((10, 10))
-                self.face_extractor = MTCNN(device=self.device, keep_all=True)
+            if self.extractor == "fast":
+                # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
+                # Currently hard-coding Haar cascade Hyperparams
+                if self.cv2_device == "cuda":
+                    self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
+                    self.face_extractor.setMinNeighbors(5)
+                    self.face_extractor.setMinObjectSize((10, 10))
+                else:
+                    self.face_extractor = cv2.CascadeClassifier(haar_path)
             else:
-                self.face_extractor = cv2.CascadeClassifier(haar_path)
+                self.face_extractor = MTCNN(device=self.device, keep_all=True)
 
             # Load in CNN model and put on Cuda Device
             if self.verbose:
@@ -109,8 +113,8 @@ class ConfusionInference(ConfusionInferenceBase):
                 print(f"Cuda total mem: {total_mem}")
             with autocast():
                 self.cnn = InceptionResnetV1(
-                        pretrained=FACE_EMBEDDING_MODEL, classify=False,
-                        device=self.device)
+                    pretrained=FACE_EMBEDDING_MODEL, classify=False, device=self.device
+                )
                 if self.verbose:
                     end_mem, total_mem = torch.cuda.mem_get_info()
                     print(f"Cuda total mem: {total_mem}")
@@ -122,37 +126,7 @@ class ConfusionInference(ConfusionInferenceBase):
         # Buffer of features
         self.feats = []
 
-    
-    def _stable_facial_extraction(self, image: Image, threshold: float = 0.80):
-        """
-        Code for MTCNN based facial extraction. Currently not supported due to
-        computational constraints
-        :param image: PIL Image of Frame
-        :param threshold: Confidence Prob Threshold of MTCNN to include
-        :return: Tensor of Size [Num Faces x 3 x 160 x 160]
-        """
-        start = time()
-        boxes, probs = self.face_extractor.detect(image)
-        print(probs, flush=True)
-        print(f"MTCNN executed in {time() - start} s")
-        if boxes is not None:
-            print(boxes.shape, flush="True")
-            boxes = np.array(
-                [box for box, prob in zip(boxes, probs) if prob > threshold],
-                dtype=np.float32,
-            )
-            
-            if boxes.shape[0] == 0: 
-                return None 
-            boxes = boxes[boxes[:, 0].argsort()]
-            print(boxes.shape, flush="True")
-        else: 
-            print("No faces detected")
-            return None
-        return self.face_extractor.extract(image, boxes, save_path=None)
-
-    @timer_func
-    def _face_extraction_harr(self, image: Image):
+    def face_extraction_harr(self, image: Image) -> Union[List[Tuple[int, torch.Tensor]], None]:
         """
         Code for Haar Cascade based facial extraction. Currently used
         due to computational superiority
@@ -173,7 +147,8 @@ class ConfusionInference(ConfusionInferenceBase):
         else:
             # CPU code has same logic but with different API and I/O
             boxes = self.face_extractor.detectMultiScale(
-                gray_img, scaleFactor=1.1, minNeighbors=5, minSize=(10, 10))
+                gray_img, scaleFactor=1.1, minNeighbors=2, minSize=(10, 10)
+            )
         if len(boxes) == 0:
             return None
         # If results are returned, change boxes from (x, y, h, w) to
@@ -190,10 +165,90 @@ class ConfusionInference(ConfusionInferenceBase):
         cv2.waitKey(0)
         """
         # Return extracted faces
-        return torch.stack([extract_face(image, box) for box in boxes])
+        faces = [extract_face(image, box) for box in boxes]
+        left_bound = [box[0] for box in boxes]
+        return list(zip(left_bound, faces))
+    @timer_func
+    def collate_frames(self, images: Union[Image, List[Image]]):
+        """
+        Take in a list of frames and extract faces from each frame. If all frames have the
+        same amount of faces, then return a list of image tensors where each tensor
+        is representative of a frame and the first dimension of the tensor is the face.
+        If frames differ in face number, send to a function that heuristically aligns the faces
+        and duplicates some faces on the time dimension
+        :param images:
+        :return:
+        """
+        if self.extractor == "fast":
+            frame_list = [self.face_extraction_harr(image) for image in images if image is not None]
+        else:
+            frame_list = [self._stable_facial_extraction(image) for image in images if image is not None]
+
+        max_len, max_vector, max_ix = len(frame_list[0]), frame_list[0], 0
+        need_match = False
+        for i in range(1, len(frame_list)):
+            curr_frame = frame_list[i]
+            if len(curr_frame) != max_len:
+                need_match = True
+                if len(curr_frame) > max_len:
+                    max_len = len(curr_frame)
+                    max_vector = curr_frame
+                    max_ix = i
+        if need_match:
+            frame_list = self.order_faces(frame_list, max_vector, max_ix)
+
+        split_frames = [zip(*zipped_frames) for zipped_frames in frame_list]
+        final_faces = [torch.stack(faces) for coordinates, faces in split_frames]
+        return final_faces
+
+    @staticmethod
+    def order_faces(
+        frame_list: List[List[Tuple[int, torch.Tensor]]],
+        max_vector: List[Tuple[int, torch.Tensor]],
+        max_ix: int,
+    ) -> List[List[Tuple[int, torch.Tensor]]]:
+        final_frames = []
+        max_vector_coords = [coord for coord, face in max_vector]
+        for i in range(len(frame_list)):
+            if i == max_ix:
+                final_frames.append(max_vector)
+                continue
+            curr_face = frame_list[i]
+            closest_ix = {get_closest_ix(coord, max_vector_coords): i for i, (coord, face) in enumerate(curr_face)}
+            aligned_face = []
+            for i in range(len(max_vector)):
+                if i not in closest_ix:
+                    aligned_face.append(max_vector[i])
+                else:
+                    aligned_face.append(curr_face[closest_ix[i]])
+            final_frames.append(aligned_face)
+        return final_frames
+
+    @timer_func
+    def _stable_facial_extraction(self, image: Image, threshold: float = 0.95):
+        """
+        Code for MTCNN based facial extraction. Currently not supported due to
+        computational constraints
+        :param image: PIL Image of Frame
+        :param threshold: Confidence Prob Threshold of MTCNN to include
+        :return: Tensor of Size [Num Faces x 3 x 160 x 160]
+        """
+        start = time()
+        boxes, probs = self.face_extractor.detect(image)
+        print(f"MTCNN executed in {time() - start} s")
+        boxes = np.array(
+            [box for box, prob in zip(boxes, probs) if prob > threshold],
+            dtype=np.float32,
+        )
+        if boxes.shape[0] == 0:
+            return None
+        boxes = boxes[boxes[:, 0].argsort()]
+        faces = [extract_face(image, box) for box in boxes]
+        left_bound = [box[0] for box in boxes]
+        return list(zip(left_bound, faces))
 
     def extract_cnn_feats(
-            self, images: Union[Image, List[Image]], threshold: float = 0.95
+        self, images: Union[Image, List[Image]], threshold: float = 0.95
     ):
         """
         Take in image frame and extract + embed all faces present
@@ -204,19 +259,17 @@ class ConfusionInference(ConfusionInferenceBase):
 
         with torch.no_grad():
             # Get Embedded Face Images
-            tensor_list = [self._stable_facial_extraction(image) for image in images if image is not None]
+            tensor_list = self.collate_frames(images)
             if len(tensor_list) != self.window_len:
                 return None
             try:
                 full_tensor = torch.stack(tensor_list, dim=1)
-                print(full_tensor.shape, flush=True)
             except RuntimeError:
-                print("HERE!", flush=True)
                 tensor_list = [torch.mean(tensor, dim=0) for tensor in tensor_list]
                 full_tensor = torch.stack(tensor_list, dim=1)
             except TypeError:
                 print("Face not detected in these frames!")
-                full_tensor = None 
+                full_tensor = None
             if full_tensor is not None:
                 # Run through feature extractor
                 if self.verbose:
@@ -251,10 +304,10 @@ class ConfusionInference(ConfusionInferenceBase):
 
     @timer_func
     def run_inference(
-            self,
-            images: List[Image],
-            output_format: str = "ix",
-            threshold: Union[float, List[float]] = 0.6,
+        self,
+        images: List[Image],
+        output_format: str = "ix",
+        threshold: Union[float, List[float]] = 0.6,
     ) -> Union[int, str, List[int], List[str]]:
         # Type check
 
@@ -274,15 +327,17 @@ class ConfusionInference(ConfusionInferenceBase):
             else:
                 preds = torch.sigmoid(logits)
                 print(preds)
-                # preds = torch.gt(preds, threshold)
         return preds
 
 
 if __name__ == "__main__":
     # Inference check
-    print(sys.path)
-    model_path = "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
-    # model_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    # model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    model_path = (
+        "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
+    )
+    # print(sys.path)
+    # model_path = "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
     torch.cuda.empty_cache()
     gc.collect()
     inference_model = ConfusionInference(
@@ -290,13 +345,17 @@ if __name__ == "__main__":
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
-        device="cuda",
+        # device="cuda",
         # haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
-        # device="cpu",
-        haar_path=None
+        device="cpu",
+        haar_path=None,
+        extractor="stable"
     )
-    file_path = "/usr0/home/nvaikunt/full_images"
-    # file_path = "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
+    # file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
+    # file_path = "/usr0/home/nvaikunt/full_images"
+    file_path = (
+        "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
+    )
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
     buffer = [img.open(os.path.join(file_path, img_file)) for img_file in dirlist]
@@ -313,7 +372,7 @@ if __name__ == "__main__":
         images.append(buffer.popleft().resize((3 * h // 4, 3 * w // 4)))
         images.append(buffer.popleft().resize((3 * h // 4, 3 * w // 4)))
         # Pseudo
-        inference_model.run_inference(images)
+        preds = inference_model.run_inference(images)
         num_preds += 1
     print(f"Total number of predictions {num_preds}")
     print(f"Total inference time: {time() - start}")
