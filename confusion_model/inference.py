@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import List, Union, Tuple
 from collections import deque
+import pickle
 
 import cv2
 import numpy as np
@@ -16,8 +17,10 @@ from torch.cuda.amp import autocast
 from facenet_pytorch import InceptionResnetV1, MTCNN
 from facenet_pytorch.models.utils.detect_face import extract_face
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from confusion_model.data_utils import convert_from_image_to_cv2, timer_func, get_closest_ix
+from confusion_model.data_utils import convert_from_image_to_cv2, timer_func, get_closest_ix, scale_box, create_yolo_tensor, post_process_yolo_preds
 from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
+from confusion_model.tensorrt_conversion import load_model
+from yolo_models.yolo import Model
 from time import time
 
 
@@ -80,7 +83,8 @@ class ConfusionInference(ConfusionInferenceBase):
         multiclass: bool = False,
         haar_path: str = None,
         extractor: str = "fast",
-        cv2_device: str = "cpu"
+        cv2_device: str = "cpu", 
+        tensor_rt: bool = False
     ):
         super().__init__(load_model_path, data_type, label_dict, device)
         """
@@ -89,28 +93,40 @@ class ConfusionInference(ConfusionInferenceBase):
         self.feat_type = load_model_path.split("/")[-1].split(".")[0].split("_")[-3]
         self.cv2_device = cv2_device
         self.extractor = extractor
-        if self.feat_type == "CNN":
-            # Default extraction, only works on newer cv2 releases
-            if haar_path is None:
-                haar_path = cv2.data.haarcascades + "haarcascade_frontalface_alt.xml"
+        self.tensor_rt = tensor_rt
+        
+        # Default extraction, only works on newer cv2 releases
+        if haar_path is None:
+            haar_path = cv2.data.haarcascades + "haarcascade_frontalface_alt.xml"
 
-            if self.extractor == "fast":
-                # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
-                # Currently hard-coding Haar cascade Hyperparams
-                if self.cv2_device == "cuda":
-                    self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
-                    self.face_extractor.setMinNeighbors(5)
-                    self.face_extractor.setMinObjectSize((10, 10))
-                else:
-                    self.face_extractor = cv2.CascadeClassifier(haar_path)
+        if self.extractor == "fast":
+            # If running Haar Cascades on Cuda, will need to use cuda optimized classifier
+            # Currently hard-coding Haar cascade Hyperparams
+            if self.cv2_device == "cuda":
+                self.face_extractor = cv2.cuda_CascadeClassifier.create(haar_path)
+                self.face_extractor.setMinNeighbors(5)
+                self.face_extractor.setMinObjectSize((10, 10))
             else:
-                self.face_extractor = MTCNN(device=self.device, keep_all=True)
-
-            # Load in CNN model and put on Cuda Device
-            if self.verbose:
-                start_mem, total_mem = torch.cuda.mem_get_info()
-                print(f"Cuda usage before loading model {start_mem}")
-                print(f"Cuda total mem: {total_mem}")
+                self.face_extractor = cv2.CascadeClassifier(haar_path)
+        else:
+            model_path = "/usr0/home/nvaikunt/Jetson/data/yolov5n-face_new.pt"
+            cfg_dict_pth = "/usr0/home/nvaikunt/Jetson/data/yolov5n-cfg_dict.pkl"
+            with open(cfg_dict_pth, 'rb') as handle:
+                cfg_dict = pickle.load(handle)
+            model = Model(cfg=cfg_dict)
+            model.load_state_dict(torch.load(model_path))
+            model.to(self.device)
+            self.face_extractor = model.eval()
+        
+        # Load in CNN model and put on Cuda Device
+        if self.verbose:
+            start_mem, total_mem = torch.cuda.mem_get_info()
+            print(f"Cuda usage before loading model {start_mem}")
+            print(f"Cuda total mem: {total_mem}")
+        if self.tensor_rt: 
+            self.cnn = load_model("./data/Inception_Net_TRT_Window.pth")
+            self.cnn.to(device=device)
+        else: 
             with autocast():
                 self.cnn = InceptionResnetV1(
                     pretrained=FACE_EMBEDDING_MODEL, classify=False, device=self.device
@@ -119,7 +135,7 @@ class ConfusionInference(ConfusionInferenceBase):
                     end_mem, total_mem = torch.cuda.mem_get_info()
                     print(f"Cuda total mem: {total_mem}")
                     print(f"Cuda usage before loading model {end_mem}")
-                self.cnn.eval()
+        self.cnn.eval()
 
         # Type of Loaded Prediction Model was trained to perform
         self.multiclass = multiclass
@@ -182,8 +198,11 @@ class ConfusionInference(ConfusionInferenceBase):
         if self.extractor == "fast":
             frame_list = [self.face_extraction_harr(image) for image in images if image is not None]
         else:
-            frame_list = [self._stable_facial_extraction(image) for image in images if image is not None]
-
+            # frame_list = [self._stable_facial_extraction(image) for image in images if image is not None]
+            frame_list = [self._yolo_extraction(image) for image in images if image is not None]
+        for frame in frame_list:
+            if frame is None: 
+                return []
         max_len, max_vector, max_ix = len(frame_list[0]), frame_list[0], 0
         need_match = False
         for i in range(1, len(frame_list)):
@@ -246,6 +265,36 @@ class ConfusionInference(ConfusionInferenceBase):
         faces = [extract_face(image, box) for box in boxes]
         left_bound = [box[0] for box in boxes]
         return list(zip(left_bound, faces))
+    
+    @timer_func
+    def _yolo_extraction(self, image: Image, model_img_size = (640, 640), model_dtype = "f32"):
+        """
+        Code for MTCNN based facial extraction. Currently not supported due to
+        computational constraints
+        :param image: PIL Image of Frame
+        :param threshold: Confidence Prob Threshold of MTCNN to include
+        :return: Tensor of Size [Num Faces x 3 x 160 x 160]
+        """
+        if  model_dtype == "f16": 
+            model_dtype = "f16"
+        else: 
+            model_dtype = "f32"
+     
+        input = create_yolo_tensor(image, model_img_size, model_dtype=model_dtype).to(self.device)
+        with torch.no_grad():
+            start = time()
+            preds = self.face_extractor(input)
+            if preds is None: 
+                return None
+            print(f"Yolo executed in {time() - start} s")
+            boxes = post_process_yolo_preds(preds, image)
+        if boxes.shape[0] == 0:
+            return None
+        boxes = boxes[boxes[:, 0].argsort()]
+        faces = [extract_face(image, box) for box in boxes]
+        left_bound = [box[0] for box in boxes]
+        return list(zip(left_bound, faces))
+            
 
     def extract_cnn_feats(
         self, images: Union[Image, List[Image]], threshold: float = 0.95
@@ -262,6 +311,8 @@ class ConfusionInference(ConfusionInferenceBase):
             tensor_list = self.collate_frames(images)
             if len(tensor_list) != self.window_len:
                 return None
+            #TODO: Only Batch at the window level, change 287 to loop through faces 
+            # -> this will allow us to use fixed batch size 
             try:
                 full_tensor = torch.stack(tensor_list, dim=1)
             except RuntimeError:
@@ -276,18 +327,11 @@ class ConfusionInference(ConfusionInferenceBase):
                     start_mem, total_mem = torch.cuda.mem_get_info()
                     print(f"Cuda usage before loading tensor {start_mem}")
                 with autocast():
-                    start_time = time()
-                    reshaped = full_tensor.reshape(-1, 3, 160, 160)
-                    if self.verbose:
-                        print(f"Time to reshape: {time() - start_time}")
-                    start_time = time()
-                    cuda_tensor = reshaped.to(self.device)
-                    if self.verbose:
-                        print(f"Time to put on tensor: {time() - start_time}")
-                        end_mem, total_mem = torch.cuda.mem_get_info()
-                        print(f"Cuda usage after loading {end_mem}")
                     start = time()
-                    cnn_feats = self.cnn(cuda_tensor)
+                    if self.tensor_rt:
+                        full_tensor = full_tensor.half()
+                    cnn_feats = torch.stack([self.cnn(tensor.to(self.device)) for tensor in full_tensor], dim=0)
+                    print(f"CNN executed in {time() - start} s")
                 if self.verbose:
                     print(f"CNN executed in {time() - start} s")
             else:
@@ -316,9 +360,11 @@ class ConfusionInference(ConfusionInferenceBase):
 
         with torch.no_grad():
             features = self.extract_cnn_feats(images)
-            if features is None: 
+            if features is None:
                 return torch.tensor([0.0] * 5)
             features = features.reshape(-1, self.input_sz)
+            if self.tensor_rt: 
+                self.model = self.model.half()
             logits = self.model(features)
             if self.multiclass:
                 preds = torch.argmax(logits, dim=-1)
@@ -334,10 +380,10 @@ if __name__ == "__main__":
     # Inference check
     # model_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/FCN_CNN_512_3.bin"
     model_path = (
-        "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/FCN_CNN_512_3.bin"
+        "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
     )
     # print(sys.path)
-    # model_path = "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
+    model_path = "/usr0/home/nvaikunt/FCN_CNN_512_3.bin"
     torch.cuda.empty_cache()
     gc.collect()
     inference_model = ConfusionInference(
@@ -345,17 +391,17 @@ if __name__ == "__main__":
         data_type="window",
         multiclass=False,
         label_dict=EMOTION_NO,
-        # device="cuda",
         # haar_path="/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
-        device="cpu",
+        device="cuda",
         haar_path=None,
-        extractor="stable"
+        extractor="stable",
+        tensor_rt = True
     )
     # file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
-    # file_path = "/usr0/home/nvaikunt/full_images"
-    file_path = (
-        "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
-    )
+    file_path = "/usr0/home/nvaikunt/full_images"
+    #file_path = (
+    #    "/Users/navaneethanvaikunthan/Documents/ConfusionDataset/data/full_images"
+    #)
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
     buffer = [img.open(os.path.join(file_path, img_file)) for img_file in dirlist]
@@ -367,10 +413,12 @@ if __name__ == "__main__":
         images = []
         image_1 = buffer.popleft()
         h, w = image_1.size
-        image_1 = image_1.resize((3 * h // 4, 3 * w // 4))
-        images.append(image_1)
-        images.append(buffer.popleft().resize((3 * h // 4, 3 * w // 4)))
-        images.append(buffer.popleft().resize((3 * h // 4, 3 * w // 4)))
+        #new_size = (int(.75 * w), int(.75 * h))
+        new_size = (640, 640)
+        image_1 = image_1
+        images.append(image_1.resize(new_size))
+        images.append(buffer.popleft().resize(new_size))
+        images.append(buffer.popleft().resize(new_size))
         # Pseudo
         preds = inference_model.run_inference(images)
         num_preds += 1

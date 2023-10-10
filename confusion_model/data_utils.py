@@ -4,7 +4,9 @@ import PIL.Image as img
 import numpy as np
 from typing import Tuple, List
 from time import time
-
+import torchvision.transforms as transforms
+import torch
+from yolo_utils.general import non_max_suppression_face
 
 def convert_from_cv2_to_image(image: np.ndarray) -> Image:
     return img.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -45,3 +47,36 @@ def get_closest_ix(coordinate: float, coordinate_list: List[float]) -> int:
     return np.argmin(
         [abs(coordinate - new_coordinate) for new_coordinate in coordinate_list]
     )
+    
+def scale_box(img2_size, box, img1_size): 
+    h1, w1 = img1_size
+    h2, w2 = img2_size
+    x_scale = w1 / w2
+    y_scale = h1 / h2
+    
+    box[:, [0, 2]] *= x_scale
+    box[:, [1, 3]] *= y_scale
+    return box
+
+def create_yolo_tensor(orig_image: Image, model_resolution: Tuple, model_dtype="f32"): 
+    start = time()
+    if orig_image.size != model_resolution:
+        new_img = orig_image.resize(model_resolution)
+    else: 
+        new_img = orig_image
+    transform = transforms.Compose([transforms.PILToTensor(), transforms.ConvertImageDtype(torch.float32)])
+    print(f"Transform only in {time() - start} s")
+    input_tensor = transform(new_img) 
+    if model_dtype == "f16": 
+        input_tensor = input_tensor.half()
+    return input_tensor.unsqueeze(0)
+@timer_func
+def post_process_yolo_preds(preds: list, orig_image: Image, model_resolution: Tuple = (640, 640)) -> np.ndarray:
+        photo = orig_image
+        preds  = non_max_suppression_face(preds[0])[0]
+        if preds.shape[0] == 0: 
+            return preds
+        preds = [pred.cpu()[:4] for pred in preds]
+        preds = scale_box(model_resolution, torch.stack(preds, dim=0), (photo.height, photo.width)).round()
+        return preds.numpy()
+
