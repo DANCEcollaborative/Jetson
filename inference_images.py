@@ -37,7 +37,7 @@ def confusion_cnn_embed():
         device="cuda",
         haar_path=None,
         extractor="stable",
-        tensor_rt = True
+        tensor_rt = False
     )
     window_len = inference_model.window_len
     num_preds = 0

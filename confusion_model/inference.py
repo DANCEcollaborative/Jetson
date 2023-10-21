@@ -19,7 +19,7 @@ from facenet_pytorch.models.utils.detect_face import extract_face
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from confusion_model.data_utils import convert_from_image_to_cv2, timer_func, get_closest_ix, scale_box, create_yolo_tensor, post_process_yolo_preds
 from confusion_model.constants import FACE_EMBEDDING_MODEL, EMOTION_NO
-from confusion_model.tensorrt_conversion import load_model
+# from confusion_model.tensorrt_conversion import load_model
 from yolo_models.yolo import Model
 from time import time
 
