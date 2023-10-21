@@ -351,13 +351,13 @@ if __name__ == "__main__":
         device="cuda",
         haar_path="/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/haarcascade_frontalface_alt_cuda.xml",
         extractor="fast",
-        tensor_rt = False
+        tensor_rt = True
     )
     # file_path = "/home/teledia/Desktop/nvaikunt/ConfusionDataset/data/full_images"
-    file_path = "/usr0/home/nvaikunt/full_images"
-    #file_path = (
-    #    "/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/full_images"
-    #)
+    # file_path = "/usr0/home/nvaikunt/full_images"
+    file_path = (
+        "/home/recrafting5/Desktop/DANCEcollaborative/nvaikunt/ConfusionDataset/data/full_images"
+    )
     dirlist = os.listdir(file_path)
     print(f"Number of images in buffer: {len(dirlist)}")
     buffer = [img.open(os.path.join(file_path, img_file)) for img_file in dirlist]

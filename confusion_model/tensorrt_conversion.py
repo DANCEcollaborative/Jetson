@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # Save TRT Model
     save_trt_model(resnet_trt, "./data/Inception_Net_TRT_Window.pth")
     trt_model = load_model("./data/Inception_Net_TRT_Window.pth")
-    full_model = InceptionResnetV1(device = "cuda", pretrained='vggface2').eval()
+    # full_model = InceptionResnetV1(device = "cuda", pretrained='vggface2').eval()
     """
     with torch.no_grad(): 
         for i in range(1, 33):
