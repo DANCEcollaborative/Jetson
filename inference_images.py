@@ -8,8 +8,8 @@ from collections import deque
 import numpy as np
 from config import *
 from zmq_utils import *
-from confusion_model.inference import ConfusionInference
-from confusion_model.constants import *
+from legacy_confusion_model.inference import ConfusionInference
+from legacy_confusion_model.constants import *
 from PIL import Image
 import base64
 import cv2

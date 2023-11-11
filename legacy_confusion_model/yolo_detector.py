@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from yolo_models.yolo import Model
 from yolo_utils.general import non_max_suppression_face
-from confusion_model.data_utils import scale_box
+from legacy_confusion_model.data_utils import scale_box
 
 
 if __name__ == "__main__":
