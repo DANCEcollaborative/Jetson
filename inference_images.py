@@ -4,11 +4,12 @@ Done: Accept images (thread), get predictions (thread). Env /usr0/home/sohamdit/
 import cv2 as cv
 import threading
 import time
+from argparse import Namespace
 from collections import deque
 import numpy as np
 from config import *
 from zmq_utils import *
-from legacy_confusion_model.inference import ConfusionInference
+from confusion_model.inference import ConfusionDetectionInference
 from legacy_confusion_model.constants import *
 from PIL import Image
 import base64
@@ -29,37 +30,33 @@ buffer = deque(maxlen=BUF_MAX_LEN)
 buffer_lock = threading.Lock()
 
 def confusion_cnn_embed():
-    inference_model = ConfusionInference(
-        load_model_path="/usr0/home/nvaikunt/FCN_CNN_512_3.bin",
-        data_type="window",
-        multiclass=False,
-        label_dict=EMOTION_NO,
-        device="cuda",
-        haar_path=None,
-        extractor="stable",
-        tensor_rt = False
+    model_args = Namespace(
+        model_type="full_image",
+        num_fusion_layers=3,
+        hidden_sz_const=512,
+        post_concat_feat_sz=512,
+        hidden_sz_strat="constant",
+        dropout=0.0
     )
-    window_len = inference_model.window_len
+
+    inference_model = ConfusionDetectionInference(
+        model_save_path="./model_weights/full_image_2023-11-08 17:00:02",
+        model_config=model_args,
+        device="cuda",
+        yolo_config = "./yolo_models/yolov5n.yaml",
+        yolo_model_pth= "./data/yolov5n-face_new.pt"
+    )
+    
     num_preds = 0
     start = time.time()
 
     while buffer:
-        if len(buffer) > window_len:
-            with buffer_lock:
-                buffer_outputs = [buffer.popleft() for _ in range(window_len)]
 
-            current_images = []
-            for img, _ in buffer_outputs:
-                h, w = img.size
-                print("hello", h, w)
-                curr_image = img.resize((3 * h // 4,  3 * w // 4))
-                print(curr_image.size)
-                current_images.append(curr_image)
-            
-            preds = inference_model.run_inference(current_images)
-            ot = send_payload(pub_socket_to_psi, "cv-preds", np.array(preds.reshape(-1,).tolist()).tobytes())
-            print(f"hello there: {ot}", preds.reshape(-1,).shape, preds.reshape(-1,).tolist())
-            num_preds += 1
+        current_image = buffer.popleft()
+        pred = inference_model.run_inference(current_image)
+        ot = send_payload(pub_socket_to_psi, "cv-preds", np.array(pred).tobytes())
+        print(f"hello there: {ot}",  pred)
+        num_preds += 1
             # feat_tensor = inference_model.extract_cnn_feats(curr_image)
             # if feat_tensor is not None:
             #     inference_model.feats.append(feat_tensor)
