@@ -31,7 +31,7 @@ buffer_lock = threading.Lock()
 
 def confusion_cnn_embed():
     model_args = Namespace(
-        model_type="full_image",
+        model_type="single_face_image",
         num_fusion_layers=3,
         hidden_sz_const=512,
         post_concat_feat_sz=512,
@@ -40,11 +40,11 @@ def confusion_cnn_embed():
     )
 
     inference_model = ConfusionDetectionInference(
-        model_save_path="./model_weights/full_image_2023-11-08 17:00:02",
+        model_save_path="/usr0/home/nvaikunt/Jetson/model_weights/face_only.pt",
         model_config=model_args,
         device="cuda",
         yolo_config = "./yolo_models/yolov5n.yaml",
-        yolo_model_pth= "./data/yolov5n-face_new.pt"
+        yolo_model_pth= "/usr0/home/nvaikunt/Jetson/data/yolov5n-face_new.pt"
     )
     
     num_preds = 0
@@ -52,7 +52,7 @@ def confusion_cnn_embed():
 
     while buffer:
 
-        current_image = buffer.popleft()
+        current_image, _ = buffer.popleft()
         pred = inference_model.run_inference(current_image)
         ot = send_payload(pub_socket_to_psi, "cv-preds", np.array(pred).tobytes())
         print(f"hello there: {ot}",  pred)

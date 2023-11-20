@@ -1,5 +1,5 @@
 from argparse import Namespace
-from models import FullImageModel, KeypointsModel, OnePassModel
+from .models import FullImageModel, KeypointsModel, OnePassModel
 import math
 import torch.nn as nn
 from typing import List, Tuple
@@ -118,6 +118,7 @@ def generate_person_bboxes(
     detect_threshold: int = 0.5,
 ) -> list:
     input_tens = transforms(image)
+
     input_tens = input_tens.to(device)
     if len(input_tens.shape) == 3:
         input_tens = input_tens.unsqueeze(0)

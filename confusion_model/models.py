@@ -12,7 +12,7 @@ def get_state_dict(self, *args, **kwargs):
     return load_state_dict_from_url(self.url, *args, **kwargs)
 
 
-WeightsEnum.get_state_dict = get_state_dict
+# WeightsEnum.get_state_dict = get_state_dict
 
 
 class FullImageModel(nn.Module):

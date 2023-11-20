@@ -17,7 +17,7 @@ from torchvision.models.detection import (
 from torchvision.transforms import v2
 
 from yolo_models.yolo import Model
-from utils import (
+from .utils import (
     generate_face_bbox,
     generate_keypoints,
     generate_person_bboxes,
@@ -52,7 +52,7 @@ class ConfusionDetectionInference:
         self.model.eval()
         # Relevant Image Transforms
         self.tensor_transforms = v2.Compose(
-            [v2.PILToTensor(), v2.ToDtype(torch.float32, scale=True)]
+            [v2.PILToTensor(), v2.ConvertDtype()]
         )
         # Save Feature Thresholds
         if threshold_dict is None:
@@ -95,6 +95,7 @@ class ConfusionDetectionInference:
             self.keypoint_model.to(self.device)
 
     def get_list_of_person_bboxes(self, full_image: Image) -> List[Image]:
+   
         people_bboxes = generate_person_bboxes(
             self.person_detector,
             full_image,
@@ -134,9 +135,9 @@ class ConfusionDetectionInference:
         if self.model_config.model_type == "single_body_image":
             body_feat = self.get_full_img_tensor(person_img)
         elif self.model_config.model_type == "single_face_image":
-            face_feat = self.get_face_tensor_from_img(person_img)
+            face_feat  = self.get_face_tensor_from_img(person_img)
         elif self.model_config.model_type == "keypoints":
-            face_feat = self.get_face_tensor_from_img(person_img)
+            face_feat  = self.get_face_tensor_from_img(person_img)
             body_feat = generate_keypoints(
                 self.keypoint_model,
                 person_img,
@@ -151,7 +152,7 @@ class ConfusionDetectionInference:
                 body_feat = body_feat[0]
         else:
             face_feat = self.get_face_tensor_from_img(person_img)
-            body_feat = self.get_full_img_tensor(person_img)
+            body_feat  = self.get_full_img_tensor(person_img)
         return body_feat, face_feat
 
     def postprocess(self, pred_list: List[float]) -> bool:
