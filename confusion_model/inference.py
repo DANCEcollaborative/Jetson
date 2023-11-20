@@ -195,8 +195,8 @@ class ConfusionDetectionInference:
                 face_feat = face_feat.to(self.device).unsqueeze(0)
                 outputs = self.model(body_feat, face_feat)
             preds = torch.clamp(outputs, 1, 10).squeeze(0).detach().cpu()
-            print(preds)
             pred_list.append(preds)
+        print(pred_list)
         if not pred_list:
             return 0
         else:
