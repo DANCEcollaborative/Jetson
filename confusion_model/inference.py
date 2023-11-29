@@ -2,7 +2,7 @@ import argparse
 from argparse import Namespace
 from typing import List, Tuple, Optional
 import os
-import datetime
+from datetime import datetime
 import csv
 
 import PIL.Image as PIL_Image
@@ -100,11 +100,12 @@ class ConfusionDetectionInference:
         self.save_pred = save_pred
         self.csv_writer = None 
         self.all_preds = []
+        self.id = 0
         if self.save_pred: 
             os.makedirs(f"./saved_preds/annotations", exist_ok=True)
             os.makedirs(f"./saved_preds/images/{datetime.today().strftime('%Y-%m-%d')}", exist_ok=True)
-            f = open(f"./saved_preds/annotations/preds_{datetime.today().strftime('%Y-%m-%d')}.csv", "a", newline='')
-            self.csv_writer = csv.writer(f)
+            self.f = open(f"./saved_preds/annotations/preds_{datetime.today().strftime('%Y-%m-%d')}.csv", "w+", newline='')
+            self.csv_writer = csv.writer(self.f)
             self.csv_writer.writerow(["ID", "Time", "Valence", "Arousal", "Dominance"])
 
     def get_list_of_person_bboxes(self, full_image: Image) -> List[Image]:
@@ -184,8 +185,9 @@ class ConfusionDetectionInference:
         return confusion
 
     def run_inference(self, image: Image) -> bool:
+       
         person_images = self.get_list_of_person_bboxes(image)
-        id = 0
+        
         if person_images is None:
             return [10.0, 10.0, 10.0]
         pred_list = []
@@ -212,14 +214,16 @@ class ConfusionDetectionInference:
             preds = torch.clamp(outputs, 1, 10).squeeze(0).detach().cpu().tolist()
             if self.save_pred: 
                 timestamp = datetime.today().strftime('%Y-%m-%d %H:%M:%S')
+                formatted_preds = [round(value , 3) for value in preds]
                 saved_outputs = [timestamp]
-                saved_outputs.extend(preds)
+                saved_outputs.extend(formatted_preds)
+                self.csv_writer.writerow(saved_outputs)
                 self.all_preds.append(saved_outputs)
                 person_draw = ImageDraw.Draw(person)
                 person_draw.text((5, 5), timestamp, fill=(255, 0, 0))        
-                person_draw.text((5, 25), preds, fill=(255, 0, 0))      
-                person.save(f"./saved_preds/images/{datetime.today().strftime('%Y-%m-%d')}/pred_{id}.jpg")     
-                id += 1
+                person_draw.text((5, 25), str(formatted_preds), fill=(255, 0, 0))      
+                person.save(f"./saved_preds/images/{datetime.today().strftime('%Y-%m-%d')}/pred_{self.id}.jpg")     
+                self.id += 1
 
 
             pred_list.append(preds)
@@ -229,6 +233,10 @@ class ConfusionDetectionInference:
             return 0
         else:
             return self.postprocess(pred_list)
+    def close(self): 
+        if self.save_pred:
+            self.f.close()
+            
 
 
 if __name__ == "__main__":

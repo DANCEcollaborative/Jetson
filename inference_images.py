@@ -31,7 +31,7 @@ buffer_lock = threading.Lock()
 
 def confusion_cnn_embed():
     model_args = Namespace(
-        model_type="single_face_image",
+        model_type="keypoints",
         num_fusion_layers=3,
         hidden_sz_const=512,
         post_concat_feat_sz=512,
@@ -40,7 +40,7 @@ def confusion_cnn_embed():
     )
 
     inference_model = ConfusionDetectionInference(
-        model_save_path="/usr0/home/nvaikunt/Jetson/model_weights/face_only.pt",
+        model_save_path="/usr0/home/nvaikunt/Jetson/model_weights/keypoints.pt",
         model_config=model_args,
         device="cuda",
         yolo_config = "./yolo_models/yolov5n.yaml",
@@ -69,6 +69,7 @@ def confusion_cnn_embed():
             #     inference_model.feats.pop(0)
             # send_payload(socket, "cvpreds", payload, originatingTime=buffer_outputs[0][1]) # sending the time when the first image of input window was captured as the originatingTime
         time.sleep(0.01)
+    inference_model.close()
     print(f"Total number of predictions {num_preds}")
     print(f"Total inference time: {time.time() - start}")
 
@@ -78,7 +79,7 @@ def read_frames():
             frame, originatingTime = readFrame(sub_socket_to_psi)
             img = base64.b64decode(frame)
             npimg = np.fromstring(img, dtype=np.uint8)
-            img = Image.fromarray(cv2.imdecode(npimg, 1))
+            img = Image.fromarray(cv2.cvtColor(cv2.imdecode(npimg, 1), cv2.COLOR_BGR2RGB))
             # if frame_count % 10 == 0:  # Add every 10th frame to buffer
             with buffer_lock:
                 buffer.append((img, originatingTime))  # Appending image and current time as tuple to buffer
