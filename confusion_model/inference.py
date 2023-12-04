@@ -171,8 +171,8 @@ class ConfusionDetectionInference:
 
     def postprocess(self, pred_list: List[list]) -> bool:
         confusion = False
-        valence_threshold = 5
-        arousal_threshold = 4
+        valence_threshold = 4.5
+        arousal_threshold = 2.5
         dominance_threshold = 6
         for pred in pred_list:
             pred_valence, pred_arousal, pred_dominance = pred
