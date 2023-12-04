@@ -170,7 +170,7 @@ class ConfusionDetectionInference:
         return body_feat, face_feat
 
     def postprocess(self, pred_list: List[list]) -> bool:
-        confusion = False
+        confusion = 0
         valence_threshold = 5
         arousal_threshold = 4
         dominance_threshold = 6
@@ -181,7 +181,7 @@ class ConfusionDetectionInference:
                 and pred_arousal < arousal_threshold
                 and pred_dominance < dominance_threshold
             ):
-                confusion = True
+                confusion = 1
         return confusion
 
     def run_inference(self, image: Image) -> bool:
@@ -189,7 +189,7 @@ class ConfusionDetectionInference:
         person_images = self.get_list_of_person_bboxes(image)
         
         if person_images is None:
-            return [10.0, 10.0, 10.0]
+            return 0
         pred_list = []
         for person in person_images:
             body_feat, face_feat = self.get_relevant_feats(person)

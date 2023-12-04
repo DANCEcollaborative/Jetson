@@ -45,7 +45,7 @@ def confusion_cnn_embed():
         device="cuda",
         yolo_config = "./yolo_models/yolov5n.yaml",
         yolo_model_pth= "/usr0/home/nvaikunt/Jetson/data/yolov5n-face_new.pt",
-        save_pred=True
+        save_pred=False
     )
     
     num_preds = 0
