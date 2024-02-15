@@ -1,41 +1,24 @@
 import zmq, datetime, time, json
-from config import *
 
+context = zmq.Context()
+socket = context.socket(zmq.REQ)
 
-def main():
-    context = zmq.Context()
-    socket = context.socket(zmq.REQ)
+print("Connecting to server...")
+socket.connect("tcp://128.2.204.249:40001")   # bree
+time.sleep(1)
 
-    print("Connecting to server...")
-    socket.connect(f"tcp://{bree_ip}:{bree_initial_response_port}")  # bree
-    time.sleep(1)
+# request = "tcp://72.95.139.140:40003"   # 140 W. Swissvale Ave.
+request = json.dumps({"sensorVideoText":"tcp://128.2.212.138:40000", "sensorAudio": "tcp://128.2.212.138:40001", "sensorDOA": "tcp://128.2.212.138:40002", "sensorVAD": "tcp://128.2.212.138:40003"})   # erebor"
+# request = "tcp://128.2.149.108:40003"
+# request = "tcp://23.227.148.141:40003"
 
-    # request = "tcp://72.95.139.140:40003"
-    request = json.dumps(
-        {
-            "remoteIP": f"tcp://{jetson_ip}:{remoteIp_port}",
-            "audio_channel": f"tcp://{jetson_ip}:{audio_port}",
-            "doa": f"tcp://{jetson_ip}:{doa_port}",
-            "vad": f"tcp://{jetson_ip}:{vad_port}",
-            "cvPreds": f"tcp://{jetson_ip}:{confusion_classifier_res_port}",
-            "images": f"tcp://{jetson_ip}:{images_port}",
-        }
-    )  # erebor"
-    # request = json.dumps({"sensorVideoText":"tcp://128.2.212.138:40000", "sensorAudio": "tcp://128.2.212.138:40001", "sensorDOA": "tcp://128.2.212.138:40002", "sensorVAD": "tcp://128.2.212.138:40003"})   # erebor"
-    # request = "tcp://128.2.149.108:40003"
-    # request = "tcp://23.227.148.141:40003"
+# Send the request
+payload = {}
+payload['message'] = request
+payload['originatingTime'] = datetime.datetime.utcnow().isoformat()
+print(f"Sending request: {request}")
+socket.send_string(request)
 
-    # Send the request
-    payload = {}
-    payload["message"] = request
-    payload["originatingTime"] = datetime.datetime.utcnow().isoformat()
-    print(f"Sending request: {request}")
-    socket.send_string(request)
-
-    #  Get the reply
-    reply = socket.recv()
-    print(f"Received reply: {reply}")
-
-
-if __name__ == "__main__":
-    main()
+#  Get the reply
+reply = socket.recv()
+print(f"Received reply: {reply}")
